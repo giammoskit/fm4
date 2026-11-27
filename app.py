@@ -55,7 +55,7 @@ SPIKE = "rgba(244,244,245,0.35)"  # thin, translucent hover line
 VIEWS = ["Growth", "Drawdowns", "Holdings history", "Years", "Stress tests", "Risk table", "Robustness", "Method"]
 BENCHMARKS = [s.BENCH_6040, s.BENCH_EW, s.BENCH_SPY]
 SNAPSHOT = Path(__file__).parent / "data" / "prices_snapshot.csv"
-REPO_URL = "add the GitHub repository URL here"
+REPO_URL = "https://github.com/giammoskit/fm4"
 
 DEFAULTS = {"window": s.SMA_MONTHS, "cost": int(s.COST_BPS), "use_filter": True, "benchmark": s.PRIMARY_BENCHMARK,
             "range": "Max", "years": (FIRST_YEAR, LAST_YEAR), "amount": 10_000, "view": "Growth",
@@ -187,6 +187,24 @@ st.markdown(f"""<style>
   border-bottom-color:{ACCENT} !important; }}
 .st-key-view [data-testid="stButtonGroup"] button p {{ font-size:0.9rem; white-space:nowrap; }}
 
+/* keyboard focus. The chips, tabs and round buttons above drop Streamlit's own ring, so they get a clear one back */
+[data-testid="stButtonGroup"] button:focus-visible, .st-key-topbar button:focus-visible,
+.st-key-holdnav button:focus-visible, .tf-info summary:focus-visible, .tf-foot a:focus-visible {{
+  outline:2px solid {ACCENT} !important; outline-offset:2px; }}
+.st-key-view [data-testid="stButtonGroup"] button:focus-visible {{ outline-offset:-2px; }}
+{ACT}:focus-visible {{ outline:none !important; }}
+{ACT}:focus-visible {ICON_BOX} {{ box-shadow:0 0 0 2px {BG}, 0 0 0 4px {ACCENT}; }}
+
+/* holdings month stepper */
+.st-key-holdnav {{ flex-wrap:nowrap !important; gap:10px !important; }}
+.st-key-holdnav button {{ width:40px; height:40px; min-height:40px; padding:0; border-radius:50%; border:none;
+  background:{RAISED}; }}
+.st-key-holdnav button:hover:not(:disabled) {{ background:{RAISED_2}; color:{INK}; }}
+.st-key-holdnav button:disabled {{ background:{RAISED} !important; opacity:0.35; }}
+.st-key-holdnav button [data-testid="stMarkdownContainer"] {{ position:absolute; width:1px; height:1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }}  /* the words stay for screen readers */
+.st-key-holdnav > div:has([data-testid="stSlider"]) {{ flex:1 1 auto !important; min-width:0 !important; }}
+
 /* sections and cards */
 .tf-sec {{ display:flex; justify-content:space-between; align-items:baseline; gap:4px 14px; flex-wrap:wrap;
           margin:26px 0 0 0; }}
@@ -213,6 +231,26 @@ div[class*="st-key-card"] {{ background:{CARD}; border:1px solid {BORDER}; borde
 .tf-pill.good {{ background:rgba(34,197,94,0.14); color:{GOOD}; }}
 .tf-pill.bad {{ background:rgba(240,68,68,0.15); color:{BAD}; }}
 .tf-pill.neutral {{ background:{RAISED}; }}
+.tf-plain {{ font-size:0.78rem; color:{INK_2}; line-height:1.45; margin-top:8px; }}
+.tf-info summary {{ list-style:none; cursor:pointer; display:block; border-radius:6px; }}
+.tf-info summary::-webkit-details-marker {{ display:none; }}
+.tf-info summary .i {{ display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px;
+  border-radius:50%; border:1px solid {INK_2}; color:{INK_2}; font-size:0.66rem; font-weight:700;
+  font-style:normal; line-height:1; margin-left:6px; vertical-align:1px; }}
+.tf-info summary:hover .i, .tf-info[open] summary .i {{ border-color:{INK}; color:{INK}; }}
+.tf-info-box {{ font-size:0.78rem; color:{INK}; line-height:1.45; background:{RAISED}; border-radius:12px;
+  padding:9px 11px; margin:8px 0 0 0; }}
+.tf-keys {{ display:flex; flex-wrap:wrap; gap:6px 16px; font-size:0.8rem; color:{INK_2}; margin:2px 0 2px 0; }}
+.tf-keys span {{ display:inline-flex; align-items:center; gap:7px; }}
+.tf-keys .sw {{ display:inline-block; width:16px; height:3px; border-radius:2px; }}
+.tf-rule {{ font-size:0.84rem; color:{INK_2}; line-height:1.5; margin-top:12px; max-width:560px; }}
+.tf-error {{ max-width:560px; margin:48px auto 12px auto; text-align:center; }}
+.tf-error .ic {{ width:52px; height:52px; border-radius:50%; margin:0 auto 14px auto; display:flex; align-items:center;
+  justify-content:center; background:rgba(210,142,5,0.16); color:#d28e05; font-size:1.5rem; font-weight:800; }}
+.tf-error .t {{ font-size:1.25rem; font-weight:700; color:{INK}; margin-bottom:6px; }}
+.tf-error .d {{ font-size:0.9rem; color:{INK_2}; line-height:1.55; }}
+.st-key-error_actions {{ justify-content:center; }}
+.st-key-error_details {{ max-width:560px; margin:0 auto; }}
 
 /* holdings and activity lists */
 .tf-donut-text .big {{ font-size:1.65rem; font-weight:700; letter-spacing:-0.02em; color:{INK};
@@ -244,6 +282,7 @@ div[class*="st-key-card"] {{ background:{CARD}; border:1px solid {BORDER}; borde
 .tf-note.warn {{ background:rgba(210,142,5,0.12); border:1px solid rgba(210,142,5,0.28); }}
 .tf-note.info {{ background:rgba(51,140,237,0.10); border:1px solid rgba(51,140,237,0.26); }}
 .tf-foot {{ color:{INK_2}; font-size:0.76rem; margin-top:28px; line-height:1.6; max-width:760px; }}
+.tf-foot a {{ color:{INK}; text-decoration:underline; text-underline-offset:2px; }}
 div[class*="st-key-card"] [data-testid="stExpander"] details {{ border:1px solid {BORDER}; border-radius:14px; }}
 .st-key-method {{ max-width:780px; }}
 .st-key-method p {{ line-height:1.6; }}
@@ -408,12 +447,33 @@ def pill(text, kind="neutral", icon=""):
     return f'<span class="tf-pill {kind}">{ic}{escape(text)}</span>'
 
 
-def compare_pill(delta, higher_is_better=True, fmt=pct):
-    """Arrow and colour show whether the strategy did better or worse than the benchmark."""
-    if pd.isna(delta) or abs(delta) < 1e-12:
+def compare_pill(delta, higher_is_better=True, points=True):
+    """Gap to the benchmark in plain words, such as "3.0 pts better".
+
+    Measures in percent differ in percentage points (pts), ratios such as the Sharpe ratio in plain units.
+    """
+    size = abs(delta) * 100 if points else abs(delta)
+    if pd.isna(delta) or round(size, 1 if points else 2) == 0:
         return pill("equal", "neutral")
     better = (delta > 0) == higher_is_better
-    return pill(fmt(delta, sign=True), "good" if better else "bad", "▲" if delta > 0 else "▼")
+    text = f"{size:.1f} pts" if points else f"{size:.2f}"
+    return pill(f"{text} {'better' if better else 'worse'}", "good" if better else "bad")
+
+
+def explained(label, text):
+    """Label with an (i) that opens a short explanation. A native disclosure works with touch, mouse and keys."""
+    return (f'<details class="tf-info"><summary><span class="tf-label">{escape(label)}</span><span class="i">i</span>'
+            f'</summary><div class="tf-info-box">{escape(text)}</div></details>')
+
+
+def chart_keys(names, dashed=()):
+    """Compact legend above a chart. It wraps on a phone instead of taking space from the plot."""
+    items = []
+    for n in names:
+        style = (f"background:repeating-linear-gradient(90deg,{COLORS[n]} 0 3px,transparent 3px 5px)" if n in dashed
+                 else f"background:{COLORS[n]}")
+        items.append(f'<span><span class="sw" style="{style}"></span>{escape(n)}</span>')
+    return f'<div class="tf-keys">{"".join(items)}</div>'
 
 
 def dot(color):
@@ -480,7 +540,7 @@ def base_layout(fig, height=320, yformat=None, yprefix="", right_margin=16, lege
     return fig
 
 
-def end_labels(fig, frame, names, fmt):
+def end_labels(fig, frame, names, fmt, colors=None):
     """Direct labels at the right end of each line, nudged apart and joined by thin leaders."""
     lo, hi = frame[names].min().min(), frame[names].max().max()
     gap = 0.075 * (hi - lo) if hi > lo else 0.1
@@ -491,15 +551,14 @@ def end_labels(fig, frame, names, fmt):
         last = y_text
         fig.add_annotation(x=frame.index[-1], y=y, text=fmt(name, y), showarrow=True, arrowhead=0, arrowwidth=1,
                            arrowcolor=INK_2, axref="pixel", ax=18, ayref="y", ay=y_text, xanchor="left",
-                           font=dict(color=INK, size=11.5), bgcolor="rgba(0,0,0,0)")
+                           font=dict(color=(colors or {}).get(name, INK), size=11.5), bgcolor="rgba(0,0,0,0)")
 
 
-def show(fig, still=False):
-    config = {"displayModeBar": False}
-    if still:  # the hero chart only scrubs, so a swipe on a phone never zooms it by accident
-        fig.update_layout(dragmode=False)
-        config["scrollZoom"] = False
-    st.plotly_chart(fig, theme=None, config=config)
+def show(fig):
+    # Drag to zoom is off. On a phone a sideways swipe zoomed a chart by accident, and without the toolbar there
+    # was no visible way back. Hover and tap still show the values. The period chips set the time window instead.
+    fig.update_layout(dragmode=False)
+    st.plotly_chart(fig, theme=None, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
 
 
 def sparkline(prices, sma, color, w=112, h=38):
@@ -536,14 +595,29 @@ def held_runs(held: pd.Series):
 
 
 # ---------------------------------------------------------------- load data
+logo = ('<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+        '<path d="M3 17 L9 11 L13 14 L21 6" stroke="white" stroke-width="2.4" stroke-linecap="round" '
+        'stroke-linejoin="round"/><circle cx="21" cy="6" r="2" fill="white"/></svg>')
+brand = (f'<div class="tf-brand"><div class="tf-logo">{logo}</div><div>'
+         f'<div class="tf-name">Trend Filtered Portfolio</div>'
+         f'<div class="tf-sub">Backtest explorer for the investor prospectus · 2270 Financial Modeling, Nova SBE</div>'
+         f'</div></div>')
 try:
     data, source = market_data()
 except Exception as err:
-    st.error("The prices could not be downloaded from Yahoo Finance. Wait a minute and press Retry. "
-             f"Details. {err}")
-    if st.button("Retry"):
-        st.cache_data.clear()
-        st.rerun()
+    # Friendly page for visitors. The technical message stays one click away for the owner of the app.
+    html(brand)
+    html('<div class="tf-error"><div class="ic">!</div><div class="t">The prices are not available right now</div>'
+         '<div class="d">Yahoo Finance, which supplies the prices, did not answer. This usually passes within a '
+         'minute or two. Press Try again in a moment.</div></div>')
+    with st.container(horizontal=True, key="error_actions"):
+        if st.button("Try again", icon=":material/refresh:", type="primary"):
+            st.cache_data.clear()
+            st.rerun()
+    with st.container(key="error_details"), st.expander("Technical details"):
+        st.markdown("The app keeps working when Yahoo Finance is down if the repository contains a saved copy of "
+                    "the prices in `data/prices_snapshot.csv`. The last cell of the Colab notebook creates it.")
+        st.code(str(err), language=None, wrap_lines=True)
     st.stop()
 
 window, cost, use_filter = st.session_state.window, st.session_state.cost, st.session_state.use_filter
@@ -562,14 +636,8 @@ is_default = (window == DEFAULTS["window"] and cost == DEFAULTS["cost"] and use_
               and benchmark == DEFAULTS["benchmark"] and years == (FIRST_YEAR, LAST_YEAR))
 
 # ---------------------------------------------------------------- top bar
-logo = ('<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-        '<path d="M3 17 L9 11 L13 14 L21 6" stroke="white" stroke-width="2.4" stroke-linecap="round" '
-        'stroke-linejoin="round"/><circle cx="21" cy="6" r="2" fill="white"/></svg>')
 with st.container(horizontal=True, vertical_alignment="center", key="topbar"):
-    html(f'<div class="tf-brand"><div class="tf-logo">{logo}</div><div>'
-         f'<div class="tf-name">Trend Filtered Portfolio</div>'
-         f'<div class="tf-sub">Backtest explorer for the investor prospectus · 2270 Financial Modeling, Nova SBE</div>'
-         f'</div></div>', width="stretch")
+    html(brand, width="stretch")
     if source == "snapshot":
         html(f'<span class="tf-badge" title="Yahoo Finance did not respond, so the app uses a saved copy of the same '
              f'Yahoo Finance prices.">{dot("#d28e05")}Saved prices</span>', width="content")
@@ -599,6 +667,11 @@ with col_num:
          f'<div class="tf-change {"good" if up else "bad"}"><span>{"▲" if up else "▼"} {money(abs(value - amount))}'
          f'</span><span>{pct(total, 1, sign=True)}</span></div>'
          f'<div class="tf-meta">{pct(perf.loc["CAGR", s.STRATEGY], 1)} a year · {period_label}</div>{vs_html}')
+    # The rule in one sentence, so a first time visitor knows what the number belongs to
+    rule = (f"The strategy holds SPY, EFA, IEF and GLD at 25% each. At every month end, an ETF below its {window} "
+            f"month average moves to Treasury bills until its price is back above it." if use_filter else
+            "The trend filter is off, so the strategy simply holds SPY, EFA, IEF and GLD at 25% each every month.")
+    html(f'<div class="tf-rule">{rule}</div>')
 
 with col_act:
     # Revolut style quick actions. Each round button shows the current setting and opens its control.
@@ -697,7 +770,7 @@ base_layout(fig, height=340, yformat="~s", yprefix="$", right_margin=4, legend=F
 fig.update_layout(hovermode="x" if chart_type == "Candles" else "x unified", margin=dict(l=0, r=0, t=12, b=4))
 fig.update_yaxes(side="right", range=y_range, tickfont=dict(color=INK_2, size=11), nticks=6)
 fig.update_xaxes(range=x_range, rangeslider_visible=False, tickfont=dict(color=INK_2, size=11))
-show(fig, still=True)
+show(fig)
 
 c_range, c_tools = st.columns([1.25, 1], vertical_alignment="center", gap="small")
 with c_range:
@@ -728,11 +801,30 @@ t_alpha = p["Alpha t statistic"]
 sig = "significant at 5%" if abs(t_alpha) >= 1.96 else "not significant"
 
 
-def stat(label, value, compare_html):
-    return (f'<div class="tf-stat"><div class="tf-label">{escape(label)}</div><div class="v">{value}</div>'
-            f'<div class="c">{compare_html}</div></div>')
+EXPLAIN = {
+    "Average annual return": "The average monthly return multiplied by 12. Higher is better.",
+    "Volatility": "How much the monthly returns swing, scaled to one year. Lower means a calmer ride.",
+    "Sharpe ratio": "Return above the Treasury bill rate for each unit of volatility. Higher means more reward for "
+                    "the risk taken.",
+    "Maximum drawdown": "The largest fall from a previous high before the value recovered. Closer to zero is better.",
+    "Alpha, annualised": "Yearly return that the benchmark does not explain. A t statistic further from zero than "
+                         "1.96 means the alpha is unlikely to be luck.",
+    "Beta": "How strongly the strategy follows the benchmark. A beta of 0.5 means it moved about half as much as "
+            "the benchmark.",
+    "Information ratio": "Average return above the benchmark divided by the tracking error, which measures how far "
+                         "the two drift apart. Higher is better.",
+    "Time invested in ETFs": "Average share of the portfolio held in ETFs rather than Treasury bills. A switch is one "
+                             "ETF moving in or out.",
+}
 
 
+def stat(label, value, compare_html, plain=""):
+    plain_html = f'<div class="tf-plain">{plain}</div>' if plain else ""
+    return (f'<div class="tf-stat">{explained(label, EXPLAIN[label])}<div class="v">{value}</div>'
+            f'<div class="c">{compare_html}</div>{plain_html}</div>')
+
+
+dd_s, dd_b = p["Maximum drawdown"], b["Maximum drawdown"]
 stats = [
     stat("Average annual return", pct(p["Annualised average return"], 2),
          f'<span>{bname} {pct(b["Annualised average return"], 2)}</span>'
@@ -742,10 +834,10 @@ stats = [
          + compare_pill(p["Annualised volatility"] - b["Annualised volatility"], False)),
     stat("Sharpe ratio", num(p["Sharpe ratio"]),
          f'<span>{bname} {num(b["Sharpe ratio"])}</span>'
-         + compare_pill(p["Sharpe ratio"] - b["Sharpe ratio"], True, fmt=num)),
-    stat("Maximum drawdown", pct(p["Maximum drawdown"], 1),
-         f'<span>{bname} {pct(b["Maximum drawdown"], 1)}</span>'
-         + compare_pill(p["Maximum drawdown"] - b["Maximum drawdown"], True)),
+         + compare_pill(p["Sharpe ratio"] - b["Sharpe ratio"], True, points=False)),
+    stat("Maximum drawdown", pct(dd_s, 1), f'<span>{bname} {pct(dd_b, 1)}</span>' + compare_pill(dd_s - dd_b, True),
+         plain=f"Like {money(amount)} falling to {money(amount * (1 + dd_s))}, against "
+               f"{money(amount * (1 + dd_b))} for {bname}"),
     stat("Alpha, annualised", pct(p["Alpha (annualised)"], 2),
          f'<span>t statistic {num(t_alpha)}</span>' + pill(sig, "neutral")),
     stat("Beta", num(p["Beta"]), f'<span>Against {bname}, whose beta is 1.00</span>'),
@@ -762,6 +854,12 @@ html('<div class="tf-stats">' + "".join(stats) + "</div>")
 HOLDING_KEY = "holding_month"
 
 
+def step_month(labels, step):
+    """Previous or next month. On a phone the slider packs 241 months into a few hundred pixels."""
+    i = labels.index(st.session_state[HOLDING_KEY]) + step
+    st.session_state[HOLDING_KEY] = labels[min(max(i, 0), len(labels) - 1)]
+
+
 @st.fragment
 def holdings_card(bt, data, window, use_filter):
     """Holdings in any month of the backtest. Only this card reruns when its month slider moves."""
@@ -774,9 +872,15 @@ def holdings_card(bt, data, window, use_filter):
     picked = months[labels.index(st.session_state[HOLDING_KEY])]
     section("Holdings", f"{picked:%B %Y}" + (" · latest" if picked == months[-1] else ""))
     with st.container(key="card_holdings"):
-        html(f'<div class="tf-caption">Move the slider to see what the portfolio held in any month from {labels[0]} '
-             f'to {labels[-1]}.</div>')
-        choice = st.select_slider("Month", options=labels, key=HOLDING_KEY, label_visibility="collapsed")
+        html(f'<div class="tf-caption">Move the slider or step one month at a time to see what the portfolio held in '
+             f'any month from {labels[0]} to {labels[-1]}.</div>')
+        at = labels.index(st.session_state[HOLDING_KEY])
+        with st.container(horizontal=True, vertical_alignment="center", key="holdnav"):
+            st.button("Previous month", icon=":material/chevron_left:", key="hold_prev", on_click=step_month,
+                      args=(labels, -1), disabled=at == 0)
+            choice = st.select_slider("Month", options=labels, key=HOLDING_KEY, label_visibility="collapsed")
+            st.button("Next month", icon=":material/chevron_right:", key="hold_next", on_click=step_month,
+                      args=(labels, 1), disabled=at == len(labels) - 1)
         month = months[labels.index(choice)]
         rebalance = month - pd.offsets.MonthEnd(1)
         if month in w_hist.index:
@@ -889,10 +993,10 @@ with st.container(key="card_analysis"):
             fig.add_trace(go.Scatter(x=growth.index, y=growth[name], name=name, mode="lines",
                                      line=dict(color=COLORS[name], width=2.8 if name == s.STRATEGY else 1.8),
                                      hovertemplate="%{y:.2f}"))
-        end_labels(fig, growth, ORDER, lambda n, y: f"{n} {y:.2f}")
-        base_layout(fig, height=420, yformat=".2f", right_margin=128)
-        fig.update_layout(legend=dict(traceorder="reversed"))
+        end_labels(fig, growth, ORDER, lambda n, y: f"{y:.2f}", colors=COLORS)
+        base_layout(fig, height=420, yformat=".2f", right_margin=44, legend=False)
         fig.update_xaxes(range=[growth.index[0], growth.index[-1]])
+        html(chart_keys(ORDER))
         show(fig)
 
     elif view == "Drawdowns":
@@ -908,8 +1012,8 @@ with st.container(key="card_analysis"):
                 fillgradient=dict(type="vertical", colorscale=[[0, rgba(COLORS[name], 0.30)], [1, rgba(COLORS[name], 0.02)]])
                 if is_s else None,
                 hovertemplate="%{y:.1%}"))
-        base_layout(fig, height=380, yformat=".0%")
-        fig.update_layout(legend=dict(traceorder="reversed"))
+        base_layout(fig, height=380, yformat=".0%", legend=False)
+        html(chart_keys(names[::-1]))
         show(fig)
 
     elif view == "Holdings history":
@@ -949,9 +1053,10 @@ with st.container(key="card_analysis"):
         for name in [s.STRATEGY, benchmark]:
             fig.add_trace(go.Bar(x=yr.index.astype(str), y=yr[name], name=name, marker_color=COLORS[name],
                                  marker_cornerradius=4, hovertemplate="%{y:.1%}"))
-        base_layout(fig, height=360, yformat=".0%")
+        base_layout(fig, height=360, yformat=".0%", legend=False)
         fig.update_layout(barmode="group", bargap=0.32, bargroupgap=0.1)
         fig.update_xaxes(showspikes=False)
+        html(chart_keys([s.STRATEGY, benchmark]))
         show(fig)
         st.dataframe(s.format_percent(yr).rename_axis("Year").reset_index(), height=table_height(yr), hide_index=True)
 
@@ -965,10 +1070,11 @@ with st.container(key="card_analysis"):
             for name in [benchmark, s.STRATEGY]:
                 fig.add_trace(go.Bar(y=short, x=stress[name], name=name, orientation="h", marker_color=COLORS[name],
                                      marker_cornerradius=4, hovertemplate="%{x:.1%}"))
-            base_layout(fig, height=60 + 62 * len(stress), yformat=None)
-            fig.update_layout(barmode="group", bargap=0.3, hovermode="y unified", legend=dict(traceorder="reversed"))
+            base_layout(fig, height=40 + 62 * len(stress), yformat=None, legend=False)
+            fig.update_layout(barmode="group", bargap=0.3, hovermode="y unified")
             fig.update_xaxes(tickformat=".0%", showgrid=True, gridcolor=GRID, showspikes=False)
             fig.update_yaxes(autorange="reversed", showgrid=False, side="left", tickfont=dict(color=INK, size=12))
+            html(chart_keys([s.STRATEGY, benchmark]))
             show(fig)
             st.dataframe(s.format_percent(stress).rename_axis("Period").reset_index(), height=table_height(stress),
                          hide_index=True)
@@ -1061,9 +1167,10 @@ research and may not suit future markets. Results also depend on four US listed 
 **Consistency with the notebook.** The app runs `strategy.py`, which contains the same code as the engine cells of
 the Colab notebook. With the prospectus settings it reproduces Table 1 of the notebook.
 
-**Source code.** {REPO_URL}
+**Source code.** [{REPO_URL.removeprefix("https://")}]({REPO_URL})
 """)
 
 html('<div class="tf-foot">Data from Yahoo Finance through the yfinance package. Monthly returns in US dollars, net of '
      'trading costs. Past performance does not predict future returns. Educational project for 2270 Financial '
-     'Modeling at Nova SBE, not investment advice.</div>')
+     f'Modeling at Nova SBE, not investment advice. <a href="{REPO_URL}" target="_blank" rel="noopener">Source code '
+     'on GitHub</a></div>')
