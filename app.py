@@ -18,13 +18,16 @@ import streamlit as st
 
 import strategy as s
 
-st.set_page_config(page_title="Trend Filtered Portfolio", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Trend Filtered Portfolio", page_icon=":material/trending_up:", layout="wide",
+                   initial_sidebar_state="collapsed")
 
 # ---------------------------------------------------------------- design tokens (dark)
-CARD, RAISED, BORDER = "#191919", "#222222", "#2a2a2a"
-INK, INK_2, GRID = "#efefef", "#9c9c9c", "#2b2b2b"
-GOOD, BAD = "#0aac23", "#dc3c3d"
-COLORS = {s.STRATEGY: "#338ced", s.BENCH_6040: "#e76624", s.BENCH_EW: "#00a888", s.BENCH_SPY: "#d28e05"}
+BG, CARD, RAISED, RAISED_2 = "#0a0a0a", "#141414", "#212121", "#2c2c2c"
+BORDER, GRID, HERO_GRID = "#232323", "#242424", "#1a1a1a"
+INK, INK_2 = "#f4f4f5", "#8e8e93"
+GOOD, BAD = "#22c55e", "#f04444"
+ACCENT = "#338ced"
+COLORS = {s.STRATEGY: ACCENT, s.BENCH_6040: "#e76624", s.BENCH_EW: "#00a888", s.BENCH_SPY: "#d28e05"}
 ASSET_COLORS = {"SPY": "#338ced", "EFA": "#e76624", "IEF": "#00a888", "GLD": "#d28e05", "CASH": "#e24d8b"}
 ORDER = [s.STRATEGY, s.BENCH_6040, s.BENCH_EW, s.BENCH_SPY]
 FONT = "Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
@@ -47,8 +50,8 @@ FIRST_YEAR = pd.Timestamp(s.BACKTEST_START).year
 LAST_YEAR = pd.Timestamp(s.BACKTEST_END).year
 RANGES = ["1Y", "3Y", "5Y", "10Y", "Max", "Custom"]
 CHART_TYPES = ["Line", "Candles"]
-CHART_LABELS = {"Line": ":material/show_chart: Line", "Candles": ":material/candlestick_chart: Candles"}
-SPIKE = "rgba(239,239,239,0.35)"  # thin, translucent hover line
+CHART_LABELS = {"Line": ":material/show_chart:", "Candles": ":material/candlestick_chart:"}
+SPIKE = "rgba(244,244,245,0.35)"  # thin, translucent hover line
 VIEWS = ["Growth", "Drawdowns", "Holdings history", "Years", "Stress tests", "Risk table", "Robustness", "Method"]
 BENCHMARKS = [s.BENCH_6040, s.BENCH_EW, s.BENCH_SPY]
 SNAPSHOT = Path(__file__).parent / "data" / "prices_snapshot.csv"
@@ -57,8 +60,26 @@ REPO_URL = "add the GitHub repository URL here"
 DEFAULTS = {"window": s.SMA_MONTHS, "cost": int(s.COST_BPS), "use_filter": True, "benchmark": s.PRIMARY_BENCHMARK,
             "range": "Max", "years": (FIRST_YEAR, LAST_YEAR), "amount": 10_000, "view": "Growth",
             "chart_type": "Line", "show_benchmark": True}
+# Settings edited inside the quick action popovers. A closed popover is not drawn in the browser, so its controls
+# would miss a reset and send their old value back on the next rerun. These settings therefore live under their own
+# key, the controls use a key with a generation number, and a reset moves to a new generation of controls.
+POPOVER_SETTINGS = ["window", "cost", "use_filter", "benchmark", "amount"]
 for key, value in DEFAULTS.items():
     st.session_state.setdefault(key, value)
+st.session_state.setdefault("generation", 0)
+
+
+def control_key(name):
+    return f"{name}_control_{st.session_state.generation}"
+
+
+def sync_setting(name):
+    """Copy a popover control to its setting. An emptied chip choice falls back to the current setting."""
+    picked = st.session_state[control_key(name)]
+    if picked is None:
+        st.session_state[control_key(name)] = st.session_state[name]
+    else:
+        st.session_state[name] = picked
 
 
 def reset_settings():
@@ -66,6 +87,7 @@ def reset_settings():
         st.session_state[key] = value
         st.session_state[f"_last_{key}"] = value
     st.session_state.pop("holding_month", None)
+    st.session_state.generation += 1
 
 
 def keep_selected(key):
@@ -77,63 +99,176 @@ def keep_selected(key):
 
 
 # ---------------------------------------------------------------- styling
+# Layout ideas. A borderless hero with one large number and a clean chart, period chips under the chart
+# (Trade Republic). Round quick action buttons that open each setting (Revolut). Section titles above
+# rounded widget cards, a key figures grid and an allocation donut with the holdings list (getquin).
+ACT = '.st-key-actions [data-testid="stPopoverButton"]'
+ICON_BOX = 'span:has(> [data-testid="stIconMaterial"])'
 st.markdown(f"""<style>
-[data-testid="stHeader"] {{ background: transparent; }}
-[data-testid="stMainBlockContainer"], .block-container {{ max-width: 1220px; padding-top: 1.4rem; padding-bottom: 3rem; }}
-div[class*="st-key-card"] {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: 24px; padding: 20px 22px 14px 22px; }}
-.tf-top {{ display:flex; justify-content:space-between; align-items:center; gap:14px; margin:0 0 16px 0; flex-wrap:wrap; }}
-.tf-brand {{ display:flex; align-items:center; gap:12px; }}
-.tf-logo {{ width:42px; height:42px; border-radius:13px; display:flex; align-items:center; justify-content:center;
-           background: linear-gradient(135deg, #338ced 0%, #9887ef 100%); box-shadow: 0 8px 28px rgba(51,140,237,0.28); }}
-.tf-name {{ font-size:1.1rem; font-weight:700; letter-spacing:-0.01em; color:{INK}; line-height:1.2; }}
-.tf-sub {{ font-size:0.8rem; color:{INK_2}; }}
-.tf-badge {{ font-size:0.78rem; font-weight:600; color:{INK}; background:{RAISED}; border:1px solid {BORDER};
-            padding:6px 12px; border-radius:999px; white-space:nowrap; }}
-.tf-dot {{ display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:7px; vertical-align:1px; }}
-.tf-label {{ font-size:0.86rem; color:{INK_2}; font-weight:500; }}
-.tf-hero {{ font-size:clamp(2.3rem, 5.2vw, 3.4rem); font-weight:750; letter-spacing:-0.035em; line-height:1.05;
-           margin:6px 0 12px 0; color:{INK}; font-variant-numeric:tabular-nums; }}
-.tf-row {{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; font-size:0.88rem; color:{INK_2}; }}
-.tf-pill {{ display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; font-weight:600;
-           font-size:0.82rem; color:{INK}; font-variant-numeric:tabular-nums; white-space:nowrap; }}
-.tf-pill.good {{ background: rgba(10,172,35,0.16); }} .tf-pill.good .ic {{ color:{GOOD}; }}
-.tf-pill.bad {{ background: rgba(220,60,61,0.18); }} .tf-pill.bad .ic {{ color:{BAD}; }}
-.tf-pill.neutral {{ background:{RAISED}; }}
-.tf-section {{ font-size:1.02rem; font-weight:700; color:{INK}; margin:0 0 2px 0; }}
-.tf-caption {{ font-size:0.8rem; color:{INK_2}; margin:0 0 8px 0; }}
-.tf-grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; margin:14px 0 14px 0; }}
-.tf-metric {{ background:{CARD}; border:1px solid {BORDER}; border-radius:20px; padding:16px 18px; }}
-.tf-metric .v {{ font-size:1.65rem; font-weight:700; letter-spacing:-0.02em; margin:6px 0 8px 0; color:{INK};
-                font-variant-numeric:tabular-nums; }}
-.tf-metric .c {{ font-size:0.8rem; color:{INK_2}; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
-.tf-item {{ display:grid; grid-template-columns:44px 1fr 112px 136px; align-items:center; gap:14px; padding:11px 2px;
-           border-bottom:1px solid {BORDER}; }}
-.tf-item:last-child {{ border-bottom:none; }}
-.tf-avatar {{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-             font-weight:700; font-size:0.74rem; letter-spacing:0.02em; }}
-.tf-t1 {{ font-weight:600; color:{INK}; font-size:0.94rem; }}
-.tf-t2 {{ color:{INK_2}; font-size:0.79rem; }}
-.tf-right {{ display:flex; flex-direction:column; align-items:flex-end; gap:5px; text-align:right; }}
-.tf-act {{ display:grid; grid-template-columns:38px 1fr auto; gap:12px; align-items:center; padding:10px 2px;
-          border-bottom:1px solid {BORDER}; }}
-.tf-act:last-child {{ border-bottom:none; }}
-.tf-act-ic {{ width:38px; height:38px; border-radius:12px; display:flex; align-items:center; justify-content:center;
-             font-weight:800; font-size:1rem; }}
+.stApp {{ background:{BG}; }}
+[data-testid="stHeader"] {{ background:transparent; }}
+[data-testid="stMain"] {{ background:radial-gradient(ellipse 900px 300px at 22% 0%, rgba(51,140,237,0.15) 0%,
+  rgba(51,140,237,0.05) 45%, rgba(51,140,237,0) 72%) no-repeat; background-attachment:local; }}
+[data-testid="stMainBlockContainer"], .block-container {{ max-width:1180px; padding-top:1.1rem; padding-bottom:4rem; }}
+
+/* top bar */
+.tf-brand {{ display:flex; align-items:center; gap:12px; min-width:0; }}
+.tf-logo {{ flex:0 0 auto; width:40px; height:40px; border-radius:12px; display:flex; align-items:center;
+           justify-content:center; background:linear-gradient(135deg, #338ced 0%, #9887ef 100%);
+           box-shadow:0 8px 28px rgba(51,140,237,0.30); }}
+.tf-name {{ font-size:1.02rem; font-weight:700; letter-spacing:-0.01em; color:{INK}; line-height:1.25; }}
+.tf-sub {{ font-size:0.78rem; color:{INK_2}; line-height:1.35; }}
+.tf-badge {{ display:inline-flex; align-items:center; gap:7px; font-size:0.78rem; font-weight:600; color:{INK};
+            background:{RAISED}; padding:7px 12px; border-radius:999px; white-space:nowrap; }}
+.tf-dot {{ display:inline-block; flex:0 0 auto; width:8px; height:8px; border-radius:50%; }}
+.st-key-topbar {{ margin-bottom:10px; }}
+.st-key-topbar button {{ border-radius:999px; min-height:34px; padding:4px 14px; background:{RAISED}; border:none;
+                        font-size:0.8rem; }}
+.st-key-topbar button:hover {{ background:{RAISED_2}; color:{INK}; }}
+
+/* hero */
+.tf-eyebrow {{ display:flex; align-items:center; gap:8px; font-size:0.88rem; color:{INK_2}; font-weight:500; }}
+.tf-hero {{ font-size:clamp(2.7rem, 7.4vw, 4.1rem); font-weight:700; letter-spacing:-0.045em; line-height:1;
+           margin:12px 0 12px 0; color:{INK}; font-variant-numeric:tabular-nums; }}
+.tf-change {{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; font-size:1rem; font-weight:600;
+             font-variant-numeric:tabular-nums; }}
+.tf-change.good {{ color:{GOOD}; }} .tf-change.bad {{ color:{BAD}; }}
+.tf-meta {{ font-size:0.86rem; color:{INK_2}; margin-top:6px; font-variant-numeric:tabular-nums; }}
+.tf-vs {{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:10px; font-size:0.88rem;
+         color:{INK_2}; font-variant-numeric:tabular-nums; }}
+.tf-vs b {{ color:{INK}; font-weight:600; }}
+.tf-vs .good {{ color:{GOOD}; }} .tf-vs .bad {{ color:{BAD}; }}
+
+/* round quick actions. ACT is the button that opens each popover. Older Streamlit puts the popover content
+   next to that button inside the same row, so every rule targets the button itself and never other buttons. */
+.st-key-actions {{ gap:6px !important; justify-content:flex-end; flex-wrap:nowrap !important; }}
+{ACT} {{ --circle:50px; background:transparent !important; border:none !important; box-shadow:none !important;
+  padding:0 !important; min-height:0 !important; width:84px; color:{INK} !important; }}
+{ACT}, {ACT} > div {{ flex-direction:column; align-items:center; justify-content:flex-start; gap:8px; }}
+{ACT} span[data-has-shortcut], {ACT} > div > div:first-child, {ACT} > div > span {{ display:flex;
+  flex-direction:column; align-items:center; gap:8px; }}
+{ACT} > div > div[aria-hidden="true"], {ACT} > div:has(> svg) {{ display:none; }}  /* dropdown arrow */
+/* the circle is the small wrapper Streamlit puts around the icon. :has() finds it without its generated class */
+{ACT} {ICON_BOX}:not(:has([data-testid="stMarkdownContainer"])) {{ display:flex; align-items:center;
+  justify-content:center; flex:0 0 auto; width:var(--circle); height:var(--circle); border-radius:50%;
+  background:{RAISED}; margin:0; transition:background .15s ease, transform .15s ease; }}
+{ACT} [data-testid="stIconMaterial"] {{ font-size:22px; width:auto; height:auto; color:{INK}; }}
+{ACT}:hover {ICON_BOX} {{ background:{RAISED_2}; }}
+{ACT}:active {ICON_BOX} {{ transform:scale(0.94); }}
+{ACT}[aria-expanded="true"] {ICON_BOX}, [aria-expanded="true"] > {ACT} {ICON_BOX} {{ background:{ACCENT}; }}
+{ACT} [data-testid="stMarkdownContainer"] p {{ font-size:0.76rem; font-weight:500; line-height:1.25; color:{INK};
+  text-align:center; white-space:normal; margin:0; }}
+[data-testid="stPopoverBody"] {{ background:#1a1a1a; border:1px solid #2a2a2a; border-radius:20px;
+  box-shadow:0 24px 64px rgba(0,0,0,0.6); padding:18px 18px 10px 18px; width:min(340px, calc(100vw - 32px)); }}
+[data-testid="stPopoverBody"] > div {{ background:transparent; border:none; box-shadow:none; padding:0; }}
+.tf-pop-title {{ font-size:1rem; font-weight:700; color:{INK}; }}
+.tf-pop-text {{ font-size:0.8rem; color:{INK_2}; line-height:1.45; margin:2px 0 4px 0; }}
+
+/* chips. Period and chart type look like Trade Republic chips, the analysis views like tabs */
+[data-testid="stButtonGroup"] button {{ border:none !important; background:transparent !important;
+  border-radius:999px !important; color:{INK_2} !important; min-height:34px; padding:4px 13px !important;
+  box-shadow:none !important; font-weight:600; }}
+[data-testid="stButtonGroup"] button p {{ font-weight:600; font-size:0.86rem; }}
+[data-testid="stButtonGroup"] button:hover {{ color:{INK} !important; background:rgba(255,255,255,0.05) !important; }}
+[data-testid="stButtonGroup"] button[aria-checked="true"],
+[data-testid="stButtonGroup"] button[data-testid$="Active"] {{ background:{RAISED} !important;
+  color:{INK} !important; }}
+[data-testid="stButtonGroup"] [role="radiogroup"], [data-testid="stButtonGroup"] > div {{ gap:2px; }}
+.st-key-view [data-testid="stButtonGroup"], .st-key-view [data-testid="stButtonGroup"] > div {{ width:100%; }}
+.st-key-view [data-testid="stButtonGroup"] > div:last-child {{ flex-wrap:nowrap; overflow-x:auto; gap:22px;
+  border-bottom:1px solid {BORDER}; scrollbar-width:none; }}
+.st-key-view [data-testid="stButtonGroup"] > div:last-child::-webkit-scrollbar {{ display:none; }}
+.st-key-view [data-testid="stButtonGroup"] button {{ flex:0 0 auto; border-radius:0 !important;
+  padding:8px 0 10px 0 !important;
+  background:transparent !important; border-bottom:2px solid transparent !important; margin-bottom:-1px; }}
+.st-key-view [data-testid="stButtonGroup"] button:hover {{ background:transparent !important; }}
+.st-key-view [data-testid="stButtonGroup"] button[aria-checked="true"],
+.st-key-view [data-testid="stButtonGroup"] button[data-testid$="Active"] {{ background:transparent !important;
+  border-bottom-color:{ACCENT} !important; }}
+.st-key-view [data-testid="stButtonGroup"] button p {{ font-size:0.9rem; white-space:nowrap; }}
+
+/* sections and cards */
+.tf-sec {{ display:flex; justify-content:space-between; align-items:baseline; gap:4px 14px; flex-wrap:wrap;
+          margin:26px 0 0 0; }}
+.tf-sec-title {{ font-size:1.3rem; font-weight:700; letter-spacing:-0.02em; color:{INK}; }}
+.tf-sec-meta {{ font-size:0.82rem; color:{INK_2}; }}
+div[class*="st-key-card"] {{ background:{CARD}; border:1px solid {BORDER}; border-radius:24px;
+  padding:20px 22px 16px 22px; }}
+.tf-label {{ font-size:0.84rem; color:{INK_2}; font-weight:500; }}
+.tf-caption {{ font-size:0.78rem; color:{INK_2}; margin:0 0 8px 0; line-height:1.5; }}
+.tf-t1 {{ font-weight:600; color:{INK}; font-size:0.94rem; line-height:1.3; }}
+.tf-t2 {{ color:{INK_2}; font-size:0.79rem; line-height:1.4; }}
 .tf-empty {{ color:{INK_2}; font-size:0.86rem; padding:14px 2px; }}
-.tf-foot {{ color:{INK_2}; font-size:0.76rem; margin-top:20px; line-height:1.55; }}
-div[class*="st-key-switch_"] {{ flex-wrap:nowrap !important; align-items:center !important; margin:2px 0 8px 0; }}
+
+/* key figures grid, split by hairlines */
+.tf-stats {{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:1px; background:{BORDER};
+            border:1px solid {BORDER}; border-radius:24px; overflow:hidden; }}
+.tf-stat {{ background:{CARD}; padding:18px 20px 18px 20px; min-width:0; }}
+.tf-stat .v {{ font-size:1.6rem; font-weight:700; letter-spacing:-0.025em; margin:6px 0 10px 0; color:{INK};
+              font-variant-numeric:tabular-nums; }}
+.tf-stat .c {{ font-size:0.78rem; color:{INK_2}; display:flex; align-items:center; gap:6px 8px; flex-wrap:wrap;
+              font-variant-numeric:tabular-nums; }}
+.tf-pill {{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:999px; font-weight:600;
+           font-size:0.76rem; color:{INK}; font-variant-numeric:tabular-nums; white-space:nowrap; }}
+.tf-pill.good {{ background:rgba(34,197,94,0.14); color:{GOOD}; }}
+.tf-pill.bad {{ background:rgba(240,68,68,0.15); color:{BAD}; }}
+.tf-pill.neutral {{ background:{RAISED}; }}
+
+/* holdings and activity lists */
+.tf-donut-text .big {{ font-size:1.65rem; font-weight:700; letter-spacing:-0.02em; color:{INK};
+                      font-variant-numeric:tabular-nums; margin:4px 0 8px 0; }}
+.tf-legend {{ display:flex; flex-wrap:wrap; gap:6px 14px; font-size:0.8rem; color:{INK_2}; margin-bottom:10px; }}
+.tf-legend span {{ display:inline-flex; align-items:center; gap:6px; }}
+.tf-legend b {{ color:{INK}; font-weight:600; font-variant-numeric:tabular-nums; }}
+.tf-item {{ display:grid; grid-template-columns:44px minmax(0, 1fr) 112px 128px; align-items:center; gap:14px;
+           padding:12px 0; border-top:1px solid {BORDER}; }}
+.tf-avatar {{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+             font-weight:700; font-size:0.72rem; letter-spacing:0.02em; }}
+.tf-right {{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; text-align:right;
+            font-variant-numeric:tabular-nums; }}
+.tf-w {{ font-weight:600; color:{INK}; font-size:0.94rem; }}
+.tf-w.off {{ color:{INK_2}; }}
+.tf-trend {{ font-size:0.78rem; font-weight:500; white-space:nowrap; }}
+.tf-trend.good {{ color:{GOOD}; }} .tf-trend.bad {{ color:{BAD}; }}
+.tf-group {{ font-size:0.78rem; font-weight:600; color:{INK_2}; padding:14px 0 4px 0; }}
+.tf-group:first-child {{ padding-top:2px; }}
+.tf-act {{ display:grid; grid-template-columns:40px minmax(0, 1fr) auto; gap:12px; align-items:center; padding:9px 0; }}
+.tf-act-ic {{ width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+             font-weight:800; font-size:1rem; }}
+.tf-amt {{ font-weight:600; font-size:0.94rem; color:{INK}; }}
+.tf-amt.in {{ color:{GOOD}; }}
+
+/* notices and footer */
+.tf-note {{ display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:16px; font-size:0.84rem;
+           color:{INK}; line-height:1.45; margin-top:6px; }}
+.tf-note.warn {{ background:rgba(210,142,5,0.12); border:1px solid rgba(210,142,5,0.28); }}
+.tf-note.info {{ background:rgba(51,140,237,0.10); border:1px solid rgba(51,140,237,0.26); }}
+.tf-foot {{ color:{INK_2}; font-size:0.76rem; margin-top:28px; line-height:1.6; max-width:760px; }}
+div[class*="st-key-card"] [data-testid="stExpander"] details {{ border:1px solid {BORDER}; border-radius:14px; }}
+.st-key-method {{ max-width:780px; }}
+.st-key-method p {{ line-height:1.6; }}
+div[class*="st-key-switch_"] {{ flex-wrap:nowrap !important; align-items:center !important; margin:2px 0 4px 0; }}
 div[class*="st-key-switch_"] > div[data-testid="stElementContainer"]:last-child {{ flex:1 1 auto !important;
   min-width:0 !important; width:auto !important; }}
-.tf-switch-text .tf-t1 {{ font-size:0.9rem; font-weight:500; }}
-.tf-switch-text {{ line-height:1.3; }}
-.tf-donut-text .big {{ font-size:1.5rem; font-weight:700; color:{INK}; font-variant-numeric:tabular-nums; }}
+
+@media (max-width: 900px) {{
+  .tf-stats {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }}
+}}
 @media (max-width: 640px) {{
-  .tf-grid {{ grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }}
-  .tf-metric {{ padding:13px 13px; border-radius:18px; }}
-  .tf-metric .v {{ font-size:1.3rem; }}
-  .tf-item {{ grid-template-columns:40px 1fr 112px; }}
+  [data-testid="stMainBlockContainer"], .block-container {{ padding-left:16px; padding-right:16px;
+    padding-top:0.6rem; }}
+  .st-key-actions {{ display:grid !important; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:0 !important;
+                    margin-top:8px; }}
+  .st-key-actions > div {{ width:auto !important; min-width:0 !important; }}
+  {ACT} {{ width:100%; --circle:46px; }}
+  .tf-sub {{ display:none; }}
+  .tf-stat {{ padding:14px 14px; }}
+  .tf-stat .v {{ font-size:1.3rem; }}
+  .tf-item {{ grid-template-columns:40px minmax(0, 1fr) auto; gap:12px; }}
+  .tf-avatar {{ width:40px; height:40px; }}
   .tf-spark {{ display:none; }}
-  div[class*="st-key-card"] {{ padding:16px 14px 10px 14px; border-radius:20px; }}
+  div[class*="st-key-card"] {{ padding:16px 14px 12px 14px; border-radius:20px; }}
+  .tf-sec-title {{ font-size:1.15rem; }}
 }}
 </style>""", unsafe_allow_html=True)
 
@@ -268,14 +403,6 @@ def money(v):
     return f"${v:,.0f}"
 
 
-def money_short(v):
-    if abs(v) < 1e3:
-        return f"${v:,.0f}"
-    if abs(v) >= 1e6:
-        return f"${v / 1e6:.2f}M"
-    return f"${v / 1e3:.1f}k"
-
-
 def pill(text, kind="neutral", icon=""):
     ic = f'<span class="ic">{icon}</span>' if icon else ""
     return f'<span class="tf-pill {kind}">{ic}{escape(text)}</span>'
@@ -289,33 +416,56 @@ def compare_pill(delta, higher_is_better=True, fmt=pct):
     return pill(fmt(delta, sign=True), "good" if better else "bad", "▲" if delta > 0 else "▼")
 
 
-def switch(key, title, note=None):
+def dot(color):
+    return f'<span class="tf-dot" style="background:{color}"></span>'
+
+
+def switch(name, title, note=None, **control):
     """Toggle that reacts only to the switch. The words beside it are plain text, not part of the control."""
-    with st.container(horizontal=True, vertical_alignment="center", gap="small", key=f"switch_{key}"):
-        st.toggle(title, key=key, label_visibility="collapsed", width="content")
+    with st.container(horizontal=True, vertical_alignment="center", gap="small", key=f"switch_{name}"):
+        st.toggle(title, label_visibility="collapsed", width="content", **(control or {"key": name}))
         note_html = f'<div class="tf-t2">{escape(note)}</div>' if note else ""
         # width="stretch" keeps the words on the same row as the switch and wraps them inside the space left
         st.markdown(f'<div class="tf-switch-text"><div class="tf-t1">{escape(title)}</div>{note_html}</div>',
                     unsafe_allow_html=True, width="stretch")
 
 
+def bound(name):
+    """Keyword arguments that tie a popover control to its setting (see POPOVER_SETTINGS)."""
+    key = control_key(name)
+    st.session_state.setdefault(key, st.session_state[name])
+    return dict(key=key, on_change=sync_setting, args=(name,))
+
+
 def table_height(frame):
     return 38 + 35 * len(frame)
 
 
-def html(markup):
-    st.markdown(markup, unsafe_allow_html=True)
+def html(markup, **kwargs):
+    st.markdown(markup, unsafe_allow_html=True, **kwargs)
+
+
+def section(title, meta=""):
+    """Section title above a card, with an optional note on the right."""
+    html(f'<div class="tf-sec"><div class="tf-sec-title">{escape(title)}</div>'
+         f'<div class="tf-sec-meta">{meta}</div></div>')
+
+
+def notice(text, kind="info"):
+    icon = "ⓘ" if kind == "info" else "⚠"
+    html(f'<div class="tf-note {kind}"><span>{icon}</span><span>{escape(text)}</span></div>')
 
 
 # ---------------------------------------------------------------- chart helpers
-def base_layout(fig, height=320, yformat=None, yprefix="", right_margin=16, legend=True, xhover="%b %Y"):
-    # Plotly draws a backdrop under the hover line in the chart background colour. A solid card colour keeps that
-    # backdrop invisible, so only the 1px translucent line shows.
+def base_layout(fig, height=320, yformat=None, yprefix="", right_margin=16, legend=True, xhover="%b %Y", bg=CARD,
+                grid=GRID):
+    # Plotly draws a backdrop under the hover line in the chart background colour. A solid colour equal to the
+    # surface behind the chart keeps that backdrop invisible, so only the 1px translucent line shows.
     fig.update_layout(
-        height=height, paper_bgcolor=CARD, plot_bgcolor=CARD,
+        height=height, paper_bgcolor=bg, plot_bgcolor=bg,
         font=dict(family=FONT, size=13, color=INK), margin=dict(l=4, r=right_margin, t=8, b=4),
         hovermode="x unified", showlegend=legend,
-        hoverlabel=dict(bgcolor="rgba(34,34,34,0.90)", bordercolor="rgba(255,255,255,0.08)",
+        hoverlabel=dict(bgcolor="rgba(30,30,30,0.94)", bordercolor="rgba(255,255,255,0.08)",
                         font=dict(family=FONT, color=INK, size=12)),
         legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0, title=None,
                     font=dict(color=INK_2, size=12), bgcolor="rgba(0,0,0,0)"),
@@ -324,7 +474,7 @@ def base_layout(fig, height=320, yformat=None, yprefix="", right_margin=16, lege
                      tickfont=dict(color=INK_2, size=12),
                      showspikes=True, spikecolor=SPIKE, spikethickness=1, spikedash="solid", spikemode="across",
                      hoverformat=xhover)
-    fig.update_yaxes(automargin=True, showgrid=True, gridcolor=GRID, gridwidth=1, zeroline=False, showline=False,
+    fig.update_yaxes(automargin=True, showgrid=True, gridcolor=grid, gridwidth=1, zeroline=False, showline=False,
                      ticks="",
                      tickfont=dict(color=INK_2, size=12), tickformat=yformat, tickprefix=yprefix, side="left")
     return fig
@@ -344,8 +494,12 @@ def end_labels(fig, frame, names, fmt):
                            font=dict(color=INK, size=11.5), bgcolor="rgba(0,0,0,0)")
 
 
-def show(fig):
-    st.plotly_chart(fig, theme=None, config={"displayModeBar": False})
+def show(fig, still=False):
+    config = {"displayModeBar": False}
+    if still:  # the hero chart only scrubs, so a swipe on a phone never zooms it by accident
+        fig.update_layout(dragmode=False)
+        config["scrollZoom"] = False
+    st.plotly_chart(fig, theme=None, config=config)
 
 
 def sparkline(prices, sma, color, w=112, h=38):
@@ -403,148 +557,169 @@ perf = s.performance_table(returns, rf, benchmark)
 growth = s.growth_of_one(returns)
 start_label = f"{growth.index[0]:%B %Y}"
 period_label = f"{returns.index[0]:%b %Y} to {returns.index[-1]:%b %Y}"
+bname = escape(benchmark)
 is_default = (window == DEFAULTS["window"] and cost == DEFAULTS["cost"] and use_filter
               and benchmark == DEFAULTS["benchmark"] and years == (FIRST_YEAR, LAST_YEAR))
 
 # ---------------------------------------------------------------- top bar
-logo = ('<svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+logo = ('<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
         '<path d="M3 17 L9 11 L13 14 L21 6" stroke="white" stroke-width="2.4" stroke-linecap="round" '
         'stroke-linejoin="round"/><circle cx="21" cy="6" r="2" fill="white"/></svg>')
-badge = (f'<span class="tf-badge"><span class="tf-dot" style="background:#338ced"></span>Prospectus settings</span>'
-         if is_default else
-         f'<span class="tf-badge"><span class="tf-dot" style="background:#e76624"></span>Custom settings</span>')
-html(f'<div class="tf-top"><div class="tf-brand"><div class="tf-logo">{logo}</div><div>'
-     f'<div class="tf-name">Trend Filtered Portfolio</div>'
-     f'<div class="tf-sub">Backtest explorer for the investor prospectus. 2270 Financial Modeling, Nova SBE</div>'
-     f'</div></div>{badge}</div>')
-if source == "snapshot":
-    st.warning("Yahoo Finance did not respond, so the app uses a saved copy of the same Yahoo Finance prices.")
+with st.container(horizontal=True, vertical_alignment="center", key="topbar"):
+    html(f'<div class="tf-brand"><div class="tf-logo">{logo}</div><div>'
+         f'<div class="tf-name">Trend Filtered Portfolio</div>'
+         f'<div class="tf-sub">Backtest explorer for the investor prospectus · 2270 Financial Modeling, Nova SBE</div>'
+         f'</div></div>', width="stretch")
+    if source == "snapshot":
+        html(f'<span class="tf-badge" title="Yahoo Finance did not respond, so the app uses a saved copy of the same '
+             f'Yahoo Finance prices.">{dot("#d28e05")}Saved prices</span>', width="content")
+    if is_default:
+        html(f'<span class="tf-badge">{dot(ACCENT)}Prospectus settings</span>', width="content")
+    else:
+        html(f'<span class="tf-badge">{dot("#e76624")}Custom settings</span>', width="content")
+        st.button("Reset", icon=":material/restart_alt:", on_click=reset_settings, key="reset",
+                  help="Back to the settings used in the prospectus")
 
-# ---------------------------------------------------------------- hero and settings
-col_hero, col_set = st.columns([2.2, 1], gap="medium")
+# ---------------------------------------------------------------- hero
+show_bench = bool(st.session_state.show_benchmark)
+on_chart = [s.STRATEGY, benchmark] if show_bench else [s.STRATEGY]
+value = amount * growth[s.STRATEGY].iloc[-1]
+total = growth[s.STRATEGY].iloc[-1] - 1
+b_value = amount * growth[benchmark].iloc[-1]
+b_total = growth[benchmark].iloc[-1] - 1
 
-with col_hero:
-    with st.container(key="card_hero"):
-        value = amount * growth[s.STRATEGY].iloc[-1]
-        total = growth[s.STRATEGY].iloc[-1] - 1
-        b_value = amount * growth[benchmark].iloc[-1]
-        b_total = growth[benchmark].iloc[-1] - 1
-        show_bench = bool(st.session_state.show_benchmark)
-        on_chart = [s.STRATEGY, benchmark] if show_bench else [s.STRATEGY]
-        bench_text = (f'<span>·</span><span>{escape(benchmark)} {money(b_value)} '
-                      f'({pct(b_total, 1, sign=True)})</span>' if show_bench else "")
-        html(f'<div class="tf-label">Value of {money(amount)} invested at the end of {start_label}</div>'
-             f'<div class="tf-hero">{money(value)}</div>'
-             f'<div class="tf-row">{compare_pill(total, True)}'
-             f'<span>{pct(perf.loc["CAGR", s.STRATEGY], 1, sign=True)} a year</span>{bench_text}</div>')
-        bench_sentence = f" The dotted line is the {escape(benchmark)} benchmark." if show_bench else ""
-        chart_type = st.session_state.chart_type or "Line"
-        if chart_type == "Line":
-            v = growth[on_chart] * amount
-            lo, hi = v.min().min(), v.max().max()
-            floor = lo - 0.08 * (hi - lo)
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=v.index, y=[floor] * len(v), mode="lines", line=dict(width=0),
-                                     hoverinfo="skip", showlegend=False))
-            fig.add_trace(go.Scatter(
-                x=v.index, y=v[s.STRATEGY], name=s.STRATEGY, mode="lines", fill="tonexty",
-                line=dict(color=COLORS[s.STRATEGY], width=2.6),
-                fillgradient=dict(type="vertical", colorscale=[[0, rgba(COLORS[s.STRATEGY], 0.0)],
-                                                                [1, rgba(COLORS[s.STRATEGY], 0.32)]]),
-                hovertemplate="$%{y:,.0f}"))
-            if show_bench:
-                fig.add_trace(go.Scatter(x=v.index, y=v[benchmark], name=benchmark, mode="lines",
-                                         line=dict(color=COLORS[benchmark], width=1.8, dash="dot"),
-                                         hovertemplate="$%{y:,.0f}"))
-            end_labels(fig, v, on_chart, lambda n, y: f"{n} {money_short(y)}")
-            base_layout(fig, height=300, yformat="~s", yprefix="$", right_margin=104, legend=show_bench)
-            fig.update_layout(legend=dict(traceorder="normal"))
-            fig.update_yaxes(range=[floor, hi + 0.06 * (hi - lo)])
-            fig.update_xaxes(range=[v.index[0], v.index[-1]])
-            caption = f"{period_label}. Monthly values in US dollars, net of trading costs.{bench_sentence}"
-        else:
-            kind = candle_kind(len(returns))
-            paths = daily_paths(window, float(cost), use_filter, tuple(on_chart))
-            start, end = growth.index[0], returns.index[-1]
-            c_s = ohlc(paths[s.STRATEGY], start, end, kind) * amount
-            c_b = ohlc(paths[benchmark], start, end, kind)["close"] * amount if show_bench else None
-            half = {"week": pd.Timedelta(days=3.5), "month": pd.Timedelta(days=15),
-                    "quarter": pd.Timedelta(days=45)}[kind]
-            x = c_s.index - half
-            if kind == "week":
-                names_ = [f"Week to {min(d, end):%d %b %Y}" for d in c_s.index]
-            elif kind == "month":
-                names_ = [f"{d:%b %Y}" for d in c_s.index]
-            else:
-                names_ = [f"Q{d.quarter} {d.year}" for d in c_s.index]
-            bench_vals = c_b.to_numpy() if show_bench else [None] * len(c_s)
-            texts = [f"<b>{n}</b>  {(row.close / row.open - 1) * 100:+.1f}%".replace("-", "\u2212")
-                     + f"<br>Open {money(row.open)}  Close {money(row.close)}"
-                     + f"<br>High {money(row.high)}  Low {money(row.low)}"
-                     + (f"<br>{escape(benchmark)} {money(bc)}" if show_bench else "")
-                     for n, row, bc in zip(names_, c_s.itertuples(), bench_vals)]
-            fig = go.Figure()
-            fig.add_trace(go.Candlestick(
-                x=x, open=c_s["open"], high=c_s["high"], low=c_s["low"], close=c_s["close"], name=s.STRATEGY,
-                increasing=dict(line=dict(color=GOOD, width=1.2), fillcolor=rgba(GOOD, 0.28)),
-                decreasing=dict(line=dict(color=BAD, width=1.2), fillcolor=BAD),
-                whiskerwidth=0, hoverinfo="text", hovertext=texts))
-            ends = pd.DataFrame({s.STRATEGY: c_s["close"].to_numpy()}, index=x)
-            lo, hi = c_s["low"].min(), c_s["high"].max()
-            if show_bench:
-                fig.add_trace(go.Scatter(x=x, y=c_b, name=benchmark, mode="lines", hoverinfo="skip",
-                                         line=dict(color=COLORS[benchmark], width=1.6, dash="dot")))
-                ends[benchmark] = c_b.to_numpy()
-                lo, hi = min(lo, c_b.min()), max(hi, c_b.max())
-            end_labels(fig, ends, on_chart, lambda n, y: f"{n} {money_short(y)}")
-            base_layout(fig, height=300, yformat="~s", yprefix="$", right_margin=104, legend=show_bench)
-            fig.update_layout(hovermode="x", legend=dict(traceorder="normal"))
-            fig.update_yaxes(range=[lo - 0.06 * (hi - lo), hi + 0.06 * (hi - lo)])
-            right_edge = min(x[-1] + half, end + pd.Timedelta(hours=23, minutes=59))  # no ticks after the data ends
-            fig.update_xaxes(rangeslider_visible=False, range=[x[0] - half, right_edge])
-            caption = (f"{period_label}. Each candle is one {kind} of the strategy value, built from daily prices "
-                       f"and net of trading costs. Green candles closed above their open, red candles below."
-                       + (f" The dotted line is the {escape(benchmark)} benchmark at each close." if show_bench else ""))
-        show(fig)
-        c_range, c_type = st.columns([3, 1.5], gap="small", vertical_alignment="center")
-        with c_range:
-            st.segmented_control("Period", RANGES, key="range", label_visibility="collapsed",
-                                 on_change=keep_selected, args=("range",))
-        with c_type:
-            st.segmented_control("Chart type", CHART_TYPES, key="chart_type", label_visibility="collapsed",
-                                 format_func=lambda c: CHART_LABELS[c], on_change=keep_selected, args=("chart_type",))
-        switch("show_benchmark", f"Compare with the {benchmark} benchmark")
-        html(f'<div class="tf-caption">{caption}</div>')
+col_num, col_act = st.columns([1.1, 1], vertical_alignment="bottom", gap="medium")
+with col_num:
+    up = value >= amount
+    vs_html = (f'<div class="tf-vs">{dot(COLORS[benchmark])}<span>{bname}</span><b>{money(b_value)}</b>'
+               f'<span class="{"good" if b_total >= 0 else "bad"}">{pct(b_total, 1, sign=True)}</span>'
+               f'<span>· {pct(perf.loc["CAGR", benchmark], 1)} a year</span></div>' if show_bench else "")
+    html(f'<div class="tf-eyebrow">{dot(ACCENT)}Strategy · {money(amount)} invested at the end of {start_label}</div>'
+         f'<div class="tf-hero">{money(value)}</div>'
+         f'<div class="tf-change {"good" if up else "bad"}"><span>{"▲" if up else "▼"} {money(abs(value - amount))}'
+         f'</span><span>{pct(total, 1, sign=True)}</span></div>'
+         f'<div class="tf-meta">{pct(perf.loc["CAGR", s.STRATEGY], 1)} a year · {period_label}</div>{vs_html}')
 
-with col_set:
-    with st.container(key="card_settings"):
-        html('<div class="tf-section">Strategy settings</div>'
-             '<div class="tf-caption">Change an assumption and every number updates.</div>')
-        st.slider("Moving average window (months)", 2, 12, key="window",
-                  help="Each month end price is compared with the average of the last N month end prices. "
-                       "The prospectus uses 10 months.")
-        st.slider("Trading cost (basis points per trade)", 0, 100, step=5, key="cost",
-                  help="Cost of buying or selling ETFs, as a share of the amount traded. 10 basis points equal "
-                       "0.10%. The prospectus uses 10.")
-        switch("use_filter", "Trend filter", "Off holds 25% in each ETF every month, like the equal weight "
-                                             "benchmark.")
-        st.segmented_control("Benchmark", BENCHMARKS, key="benchmark", on_change=keep_selected, args=("benchmark",),
-                             format_func=lambda x: "Equal" if x == s.BENCH_EW else x,
-                             help="Alpha, beta, tracking error and information ratio are measured against this "
-                                  "portfolio. The prospectus uses 60/40.")
-        st.number_input("Invested amount ($)", min_value=100, max_value=10_000_000, step=100, key="amount",
-                        help="Any amount from $100. It scales the dollar values only, not the returns.")
-        if st.session_state.range == "Custom":
-            st.slider("Years to evaluate", FIRST_YEAR, LAST_YEAR, key="years")
-        st.button("Reset to prospectus settings", on_click=reset_settings, width="stretch")
+with col_act:
+    # Revolut style quick actions. Each round button shows the current setting and opens its control.
+    with st.container(horizontal=True, key="actions"):
+        with st.popover(f"{window} month trend", icon=":material/timeline:"):
+            html('<div class="tf-pop-title">Trend window</div><div class="tf-pop-text">Each month end price is '
+                 'compared with the average of the last N month end prices. Above the average the ETF keeps its '
+                 '25%, below it the 25% moves to Treasury bills. The prospectus uses 10 months.</div>')
+            st.slider("Moving average window (months)", 2, 12, format="%d months", label_visibility="collapsed",
+                      **bound("window"))
+        with st.popover(f"{cost} bp costs", icon=":material/receipt_long:"):
+            html('<div class="tf-pop-title">Trading cost</div><div class="tf-pop-text">Cost of buying or selling '
+                 'ETFs, as a share of the amount traded. 10 basis points equal 0.10%. Treasury bill trades are free. '
+                 'The prospectus uses 10.</div>')
+            st.slider("Trading cost (basis points per trade)", 0, 100, step=5, format="%d bp",
+                      label_visibility="collapsed", **bound("cost"))
+        with st.popover(f"Filter {'on' if use_filter else 'off'}",
+                        icon=":material/filter_alt:" if use_filter else ":material/filter_alt_off:"):
+            html('<div class="tf-pop-title">Trend filter</div><div class="tf-pop-text">On moves an ETF to Treasury '
+                 'bills while it trades below its trend. Off holds 25% in each ETF every month, like the equal '
+                 'weight benchmark.</div>')
+            switch("use_filter", "Use the trend filter", **bound("use_filter"))
+        with st.popover(f"vs {benchmark}", icon=":material/compare_arrows:"):
+            html('<div class="tf-pop-title">Benchmark</div><div class="tf-pop-text">Alpha, beta, tracking error and '
+                 'information ratio are measured against this portfolio. The prospectus uses 60/40.</div>')
+            st.segmented_control("Benchmark", BENCHMARKS, label_visibility="collapsed", **bound("benchmark"))
+        with st.popover(money(amount), icon=":material/payments:"):
+            html('<div class="tf-pop-title">Invested amount</div><div class="tf-pop-text">Any amount from $100. It '
+                 'scales the dollar values only, not the returns.</div>')
+            st.number_input("Invested amount ($)", min_value=100, max_value=10_000_000, step=1000,
+                            label_visibility="collapsed", **bound("amount"))
+
+chart_type = st.session_state.chart_type or "Line"
+if chart_type == "Line":
+    v = growth[on_chart] * amount
+    lo, hi = min(v.min().min(), amount), max(v.max().max(), amount)
+    floor = lo - 0.08 * (hi - lo)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=v.index, y=[floor] * len(v), mode="lines", line=dict(width=0),
+                             hoverinfo="skip", showlegend=False))
+    fig.add_trace(go.Scatter(
+        x=v.index, y=v[s.STRATEGY], name=s.STRATEGY, mode="lines", fill="tonexty",
+        line=dict(color=COLORS[s.STRATEGY], width=2.4),
+        fillgradient=dict(type="vertical", colorscale=[[0, rgba(COLORS[s.STRATEGY], 0.0)],
+                                                        [1, rgba(COLORS[s.STRATEGY], 0.30)]]),
+        hovertemplate="$%{y:,.0f}"))
+    if show_bench:
+        fig.add_trace(go.Scatter(x=v.index, y=v[benchmark], name=benchmark, mode="lines",
+                                 line=dict(color=COLORS[benchmark], width=1.8, dash="dot"),
+                                 hovertemplate="$%{y:,.0f}"))
+    y_range = [floor, hi + 0.06 * (hi - lo)]
+    x_range = [v.index[0], v.index[-1]]
+    caption = "Monthly values in US dollars, net of trading costs."
+else:
+    kind = candle_kind(len(returns))
+    paths = daily_paths(window, float(cost), use_filter, tuple(on_chart))
+    start, end = growth.index[0], returns.index[-1]
+    c_s = ohlc(paths[s.STRATEGY], start, end, kind) * amount
+    c_b = ohlc(paths[benchmark], start, end, kind)["close"] * amount if show_bench else None
+    half = {"week": pd.Timedelta(days=3.5), "month": pd.Timedelta(days=15), "quarter": pd.Timedelta(days=45)}[kind]
+    x = c_s.index - half
+    if kind == "week":
+        names_ = [f"Week to {min(d, end):%d %b %Y}" for d in c_s.index]
+    elif kind == "month":
+        names_ = [f"{d:%b %Y}" for d in c_s.index]
+    else:
+        names_ = [f"Q{d.quarter} {d.year}" for d in c_s.index]
+    bench_vals = c_b.to_numpy() if show_bench else [None] * len(c_s)
+    texts = [f"<b>{n}</b>  {(row.close / row.open - 1) * 100:+.1f}%".replace("-", "−")
+             + f"<br>Open {money(row.open)}  Close {money(row.close)}"
+             + f"<br>High {money(row.high)}  Low {money(row.low)}"
+             + (f"<br>{escape(benchmark)} {money(bc)}" if show_bench else "")
+             for n, row, bc in zip(names_, c_s.itertuples(), bench_vals)]
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=x, open=c_s["open"], high=c_s["high"], low=c_s["low"], close=c_s["close"], name=s.STRATEGY,
+        increasing=dict(line=dict(color=GOOD, width=1.2), fillcolor=rgba(GOOD, 0.28)),
+        decreasing=dict(line=dict(color=BAD, width=1.2), fillcolor=BAD),
+        whiskerwidth=0, hoverinfo="text", hovertext=texts))
+    lo, hi = min(c_s["low"].min(), amount), max(c_s["high"].max(), amount)
+    if show_bench:
+        fig.add_trace(go.Scatter(x=x, y=c_b, name=benchmark, mode="lines", hoverinfo="skip",
+                                 line=dict(color=COLORS[benchmark], width=1.6, dash="dot")))
+        lo, hi = min(lo, c_b.min()), max(hi, c_b.max())
+    y_range = [lo - 0.06 * (hi - lo), hi + 0.06 * (hi - lo)]
+    right_edge = min(x[-1] + half, end + pd.Timedelta(hours=23, minutes=59))  # no ticks after the data ends
+    x_range = [x[0] - half, right_edge]
+    caption = (f"Each candle is one {kind} of the strategy value, built from daily prices and net of trading costs. "
+               f"Green candles closed above their open, red candles below.")
+
+# Trade Republic style chart. Price axis on the right, faint grid, and a dotted line at the amount invested.
+fig.add_hline(y=amount, line=dict(color=rgba(INK, 0.28), width=1, dash="dot"))
+fig.add_annotation(x=1, xref="paper", y=amount, yref="y", text=f"Invested {money(amount)}", showarrow=False,
+                   xanchor="right", yanchor="bottom", yshift=2, font=dict(color=INK_2, size=11))
+base_layout(fig, height=340, yformat="~s", yprefix="$", right_margin=4, legend=False, bg=BG, grid=HERO_GRID)
+fig.update_layout(hovermode="x" if chart_type == "Candles" else "x unified", margin=dict(l=0, r=0, t=12, b=4))
+fig.update_yaxes(side="right", range=y_range, tickfont=dict(color=INK_2, size=11), nticks=6)
+fig.update_xaxes(range=x_range, rangeslider_visible=False, tickfont=dict(color=INK_2, size=11))
+show(fig, still=True)
+
+c_range, c_tools = st.columns([1.25, 1], vertical_alignment="center", gap="small")
+with c_range:
+    st.segmented_control("Period", RANGES, key="range", label_visibility="collapsed",
+                         on_change=keep_selected, args=("range",))
+with c_tools:
+    with st.container(horizontal=True, horizontal_alignment="right", vertical_alignment="center", key="charttools"):
+        st.toggle(f"Compare {benchmark}", key="show_benchmark")
+        st.segmented_control("Chart type", CHART_TYPES, key="chart_type", label_visibility="collapsed",
+                             format_func=lambda c: CHART_LABELS[c], on_change=keep_selected, args=("chart_type",))
+if st.session_state.range == "Custom":
+    st.slider("Years to evaluate", FIRST_YEAR, LAST_YEAR, key="years")
+bench_sentence = f" The dotted line is the {bname} benchmark." if show_bench else ""
+html(f'<div class="tf-caption">{period_label}. {caption}{bench_sentence}</div>')
 
 if len(returns) < 36:
-    st.warning("The selected period has fewer than 36 months, so the measures below are very noisy.")
+    notice("The selected period has fewer than 36 months, so the measures below are very noisy.", "warn")
 if not use_filter:
-    st.info("The trend filter is off. The strategy holds 25% in each ETF every month and equals the equal weight "
-            "benchmark.")
+    notice("The trend filter is off. The strategy holds 25% in each ETF every month and equals the equal weight "
+           "benchmark.", "info")
 
-# ---------------------------------------------------------------- metric cards
+# ---------------------------------------------------------------- key figures
 p, b = perf[s.STRATEGY], perf[benchmark]
 trade_bt = s.BacktestResult(returns=returns, rf=rf, details={k: in_period(d, years) for k, d in bt.details.items()},
                             weights={k: in_period(w, years) for k, w in bt.weights.items()})
@@ -553,35 +728,35 @@ t_alpha = p["Alpha t statistic"]
 sig = "significant at 5%" if abs(t_alpha) >= 1.96 else "not significant"
 
 
-def card(label, value, compare_html):
-    return (f'<div class="tf-metric"><div class="tf-label">{escape(label)}</div><div class="v">{value}</div>'
+def stat(label, value, compare_html):
+    return (f'<div class="tf-stat"><div class="tf-label">{escape(label)}</div><div class="v">{value}</div>'
             f'<div class="c">{compare_html}</div></div>')
 
 
-bname = escape(benchmark)
-cards = [
-    card("Average annual return", pct(p["Annualised average return"], 2),
+stats = [
+    stat("Average annual return", pct(p["Annualised average return"], 2),
          f'<span>{bname} {pct(b["Annualised average return"], 2)}</span>'
          + compare_pill(p["Annualised average return"] - b["Annualised average return"], True)),
-    card("Volatility", pct(p["Annualised volatility"], 2),
+    stat("Volatility", pct(p["Annualised volatility"], 2),
          f'<span>{bname} {pct(b["Annualised volatility"], 2)}</span>'
          + compare_pill(p["Annualised volatility"] - b["Annualised volatility"], False)),
-    card("Sharpe ratio", num(p["Sharpe ratio"]),
+    stat("Sharpe ratio", num(p["Sharpe ratio"]),
          f'<span>{bname} {num(b["Sharpe ratio"])}</span>'
          + compare_pill(p["Sharpe ratio"] - b["Sharpe ratio"], True, fmt=num)),
-    card("Maximum drawdown", pct(p["Maximum drawdown"], 1),
+    stat("Maximum drawdown", pct(p["Maximum drawdown"], 1),
          f'<span>{bname} {pct(b["Maximum drawdown"], 1)}</span>'
          + compare_pill(p["Maximum drawdown"] - b["Maximum drawdown"], True)),
-    card("Alpha, annualised", pct(p["Alpha (annualised)"], 2),
+    stat("Alpha, annualised", pct(p["Alpha (annualised)"], 2),
          f'<span>t statistic {num(t_alpha)}</span>' + pill(sig, "neutral")),
-    card("Beta", num(p["Beta"]), f'<span>Against {bname}, whose beta is 1.00</span>'),
-    card("Information ratio", num(p["Information ratio"]),
+    stat("Beta", num(p["Beta"]), f'<span>Against {bname}, whose beta is 1.00</span>'),
+    stat("Information ratio", num(p["Information ratio"]),
          f'<span>Tracking error {pct(p["Tracking error"], 1)} a year</span>'),
-    card("Time invested in ETFs", pct(trade["Average share invested in ETFs"], 0),
+    stat("Time invested in ETFs", pct(trade["Average share invested in ETFs"], 0),
          f'<span>{trade["Signal switches per year"]:.1f} switches and {pct(trade["Annual trading cost"], 2)} '
          f'costs a year</span>'),
 ]
-html('<div class="tf-grid">' + "".join(cards) + "</div>")
+section("Key figures", f"Strategy against {bname} · {period_label}")
+html('<div class="tf-stats">' + "".join(stats) + "</div>")
 
 # ---------------------------------------------------------------- holdings and activity
 HOLDING_KEY = "holding_month"
@@ -596,97 +771,113 @@ def holdings_card(bt, data, window, use_filter):
     labels = [f"{m:%b %Y}" for m in months]
     if st.session_state.get(HOLDING_KEY) not in labels:
         st.session_state[HOLDING_KEY] = labels[-1]
+    picked = months[labels.index(st.session_state[HOLDING_KEY])]
+    section("Holdings", f"{picked:%B %Y}" + (" · latest" if picked == months[-1] else ""))
     with st.container(key="card_holdings"):
-        html(f'<div class="tf-section">Holdings</div><div class="tf-caption">Move the slider to see what the '
-             f'portfolio held in any month from {labels[0]} to {labels[-1]}. Positions are set at the rebalance on '
-             f'the last day of the month before.</div>')
+        html(f'<div class="tf-caption">Move the slider to see what the portfolio held in any month from {labels[0]} '
+             f'to {labels[-1]}.</div>')
         choice = st.select_slider("Month", options=labels, key=HOLDING_KEY, label_visibility="collapsed")
         month = months[labels.index(choice)]
         rebalance = month - pd.offsets.MonthEnd(1)
         if month in w_hist.index:
             weights = w_hist.loc[month].to_dict()
         else:
-            sig = bt.signals.loc[rebalance]
-            weights = {a: (0.25 if (sig[a] == 1 or not use_filter) else 0.0) for a in s.RISKY_ASSETS}
+            sig_ = bt.signals.loc[rebalance]
+            weights = {a: (0.25 if (sig_[a] == 1 or not use_filter) else 0.0) for a in s.RISKY_ASSETS}
             weights["CASH"] = 1 - sum(weights.values())
         sma_at, price_at, irx_at = bt.sma.loc[rebalance], data.prices.loc[rebalance], data.irx.loc[rebalance]
-        latest = " (latest)" if month == months[-1] else ""
-        d1, d2 = st.columns([1, 1.6], gap="small")
+        keys = s.RISKY_ASSETS + ["CASH"]
+        d1, d2 = st.columns([1, 1.7], gap="small", vertical_alignment="center")
         with d1:
-            keys = s.RISKY_ASSETS + ["CASH"]
             donut = go.Figure(go.Pie(labels=[a if a != "CASH" else "T-bills" for a in keys],
-                                     values=[weights[a] for a in keys], hole=0.72, sort=False, direction="clockwise",
+                                     values=[weights[a] for a in keys], hole=0.74, sort=False, direction="clockwise",
                                      marker=dict(colors=[ASSET_COLORS[a] for a in keys], line=dict(color=CARD, width=3)),
                                      textinfo="none", hovertemplate="%{label} %{value:.0%}<extra></extra>"))
             donut.add_annotation(text=f"<b>{pct(1 - weights['CASH'], 0)}</b><br><span style='font-size:12px;"
                                       f"color:{INK_2}'>invested</span>", showarrow=False,
                                  font=dict(size=22, color=INK, family=FONT))
-            donut.update_layout(height=184, margin=dict(l=8, r=8, t=12, b=12), showlegend=False,
+            donut.update_layout(height=176, margin=dict(l=4, r=4, t=8, b=8), showlegend=False,
                                 paper_bgcolor=CARD, font=dict(family=FONT))
             show(donut)
         with d2:
             n_held = sum(1 for a in s.RISKY_ASSETS if weights[a] > 0)
-            html(f'<div class="tf-donut-text" style="padding-top:16px"><div class="tf-label">Held during '
-                 f'{month:%B %Y}{latest}</div><div class="big">{n_held} of 4 ETFs</div><div class="tf-t2" '
-                 f'style="margin-top:8px">Set at the rebalance on {rebalance:%d %b %Y}. The rest earns the Treasury '
-                 f'bill rate, {irx_at:.2f}% a year at that date.</div></div>')
+            legend = "".join(f'<span>{dot(ASSET_COLORS[a])}{a if a != "CASH" else "T-bills"} '
+                             f'<b>{pct(weights[a], 0)}</b></span>' for a in keys)
+            html(f'<div class="tf-donut-text"><div class="tf-label">Held during {month:%B %Y}</div>'
+                 f'<div class="big">{n_held} of 4 ETFs</div><div class="tf-legend">{legend}</div>'
+                 f'<div class="tf-t2">Set at the rebalance on {rebalance:%d %b %Y}. Cash earns the Treasury bill rate, '
+                 f'{irx_at:.2f}% a year at that date.</div></div>')
         rows = []
         for a in s.RISKY_ASSETS:
             name, desc = ASSET_INFO[a]
             color = ASSET_COLORS[a]
             dist = price_at[a] / sma_at[a] - 1
-            status = pill("Invested 25%", "good", "\u25cf") if weights[a] > 0 else pill("In T-bills", "neutral")
-            trend = f'<span class="tf-t2">{pct(dist, 1, sign=True)} vs trend</span>'
+            held = weights[a] > 0
+            trend = (f'<span class="tf-trend {"good" if dist >= 0 else "bad"}">{"▲" if dist >= 0 else "▼"} '
+                     f'{pct(abs(dist), 1)} {"above" if dist >= 0 else "below"} trend</span>')
             spark = sparkline(data.prices[a].loc[:rebalance].tail(24), bt.sma[a].loc[:rebalance].tail(24), color)
             rows.append(f'<div class="tf-item"><div class="tf-avatar" style="background:{rgba(color, 0.16)};'
-                        f'color:{color}">{a}</div><div><div class="tf-t1">{name}</div><div class="tf-t2">{a} \u00b7 '
-                        f'{desc}</div></div>{spark}<div class="tf-right">{status}{trend}</div></div>')
+                        f'color:{color}">{a}</div><div><div class="tf-t1">{name}</div><div class="tf-t2">{a} · '
+                        f'{desc}</div></div>{spark}<div class="tf-right"><span class="tf-w{"" if held else " off"}">'
+                        f'{pct(weights[a], 0)}</span>{trend}</div></div>')
         cash_color = ASSET_COLORS["CASH"]
         rows.append(f'<div class="tf-item"><div class="tf-avatar" style="background:{rgba(cash_color, 0.16)};'
                     f'color:{cash_color}">T</div><div><div class="tf-t1">Treasury bills</div><div class="tf-t2">'
                     f'3 month US government bills</div></div><div class="tf-spark"></div><div class="tf-right">'
-                    f'{pill(pct(weights["CASH"], 0), "neutral")}<span class="tf-t2">{irx_at:.2f}% a year'
-                    f'</span></div></div>')
+                    f'<span class="tf-w{"" if weights["CASH"] > 0 else " off"}">{pct(weights["CASH"], 0)}</span>'
+                    f'<span class="tf-t2">{irx_at:.2f}% a year</span></div></div>')
         html("".join(rows))
-        html(f'<div class="tf-caption" style="margin-top:8px">Sparklines show the 24 month end prices up to the '
+        html(f'<div class="tf-caption" style="margin-top:4px">Sparklines show the 24 month end prices up to the '
              f'rebalance, with the {window} month moving average (the trend) dashed.</div>')
 
 
-col_hold, col_act = st.columns([1.35, 1], gap="medium")
+col_hold, col_act = st.columns([1.4, 1], gap="medium")
 with col_hold:
     holdings_card(bt, data, window, use_filter)
 
 with col_act:
+    w_all = bt.weights[s.STRATEGY][s.RISKY_ASSETS]
+    w_per = in_period(w_all, years)
+    prev = w_all.shift(1).reindex(w_per.index)
+    trades = []
+    for date in w_per.index:
+        for a in s.RISKY_ASSETS:
+            before, after = prev.loc[date, a], w_per.loc[date, a]
+            if pd.isna(before) or before == after:
+                continue
+            trades.append((date - pd.offsets.MonthEnd(1), "Bought" if after > before else "Sold", a))
+    section("Activity", f"{len(trades)} trades · {period_label}")
     with st.container(key="card_activity"):
-        w_all = bt.weights[s.STRATEGY][s.RISKY_ASSETS]
-        w_per = in_period(w_all, years)
-        prev = w_all.shift(1).reindex(w_per.index)
-        trades = []
-        for date in w_per.index:
-            for a in s.RISKY_ASSETS:
-                before, after = prev.loc[date, a], w_per.loc[date, a]
-                if pd.isna(before) or before == after:
-                    continue
-                trades.append((date - pd.offsets.MonthEnd(1), "Bought" if after > before else "Sold", a))
-        html(f'<div class="tf-section">Recent trades</div><div class="tf-caption">{len(trades)} signal changes in '
-             f'the selected period. Trades happen at month end prices.</div>')
         if trades:
-            items = []
-            for date, action, a in trades[::-1][:7]:
+            # Revolut style list. Trades grouped by month, money moving in shown in green.
+            items, last_group = [], None
+            for date, action, a in trades[::-1][:6]:
+                group = f"{date:%B %Y}"
+                if group != last_group:
+                    items.append(f'<div class="tf-group">{group}</div>')
+                    last_group = group
                 color = ASSET_COLORS[a]
-                arrow = "↗" if action == "Bought" else "↘"
-                why = (f"Price rose above its {window} month average" if action == "Bought"
-                       else f"Price fell below its {window} month average. 25% moved to T-bills")
+                bought = action == "Bought"
+                why = (f"Rose above its {window} month average" if bought
+                       else f"Fell below its {window} month average")
                 items.append(f'<div class="tf-act"><div class="tf-act-ic" style="background:{rgba(color, 0.16)};'
-                             f'color:{color}">{arrow}</div><div><div class="tf-t1">{action} {a}</div>'
-                             f'<div class="tf-t2">{why}</div></div><div class="tf-t2">{date:%d %b %Y}</div></div>')
+                             f'color:{color}">{"↗" if bought else "↘"}</div><div><div class="tf-t1">{action} {a}'
+                             f'</div><div class="tf-t2">{why}</div></div><div class="tf-right">'
+                             f'<span class="tf-amt{" in" if bought else ""}">{"+" if bought else "−"}25%</span>'
+                             f'<span class="tf-t2">{"from" if bought else "to"} T-bills</span></div></div>')
             html("".join(items))
+            with st.expander(f"See all {len(trades)} trades"):
+                st.dataframe(pd.DataFrame([{"Rebalance": f"{d:%d %b %Y}", "Trade": f"{act} {a}",
+                                            "Weight": "+25%" if act == "Bought" else "−25%"}
+                                           for d, act, a in trades[::-1]]),
+                             hide_index=True, height=min(420, 38 + 35 * len(trades)))
+            html('<div class="tf-caption" style="margin-top:8px">Trades happen at month end prices.</div>')
         else:
             html('<div class="tf-empty">No trades. Every ETF kept its weight during this period.</div>')
 
 # ---------------------------------------------------------------- analysis views
+section("Analysis", period_label)
 with st.container(key="card_analysis"):
-    html('<div class="tf-section">Analysis</div>')
     view = st.segmented_control("View", VIEWS, key="view", label_visibility="collapsed",
                                 on_change=keep_selected, args=("view",)) or "Growth"
 
@@ -804,7 +995,8 @@ with st.container(key="card_analysis"):
                 "divided by the annualised tracking error.\n"
                 "- Maximum drawdown is the largest fall of the month end value from a previous peak.")
         csv = returns.assign(**{"Risk free rate": rf}).to_csv().encode()
-        st.download_button("Download the monthly returns (CSV)", csv, "monthly_returns.csv", "text/csv")
+        st.download_button("Download the monthly returns (CSV)", csv, "monthly_returns.csv", "text/csv",
+                           icon=":material/download:")
 
     elif view == "Robustness":
         html(f'<div class="tf-caption">Strategy results for moving average windows from 2 to 12 months, with the '
@@ -839,7 +1031,8 @@ with st.container(key="card_analysis"):
         }).rename_axis("Window (months)").reset_index(), height=table_height(wt), hide_index=True)
 
     else:  # Method
-        st.markdown(f"""
+        with st.container(key="method"):
+            st.markdown(f"""
 **Target investor.** Cautious retail investors aged roughly 50 to 60 who save for retirement over five to ten
 years. They want returns above inflation and deposit rates, but large losses would push them to sell at the worst
 moment. Limiting deep losses comes first.
