@@ -9,12 +9,14 @@ This file only builds the interface.
 """
 from html import escape
 from pathlib import Path
+from urllib.parse import urlencode
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 import strategy as s
 
@@ -26,6 +28,7 @@ BG, CARD, RAISED, RAISED_2 = "#0a0a0a", "#141414", "#212121", "#2c2c2c"
 BORDER, GRID, HERO_GRID = "#232323", "#242424", "#1a1a1a"
 INK, INK_2 = "#f4f4f5", "#8e8e93"
 GOOD, BAD = "#22c55e", "#f04444"
+BAD_TEXT = "#ff6464"  # lighter red for small text on a red tint, 5.5 to 1 contrast
 ACCENT = "#338ced"
 COLORS = {s.STRATEGY: ACCENT, s.BENCH_6040: "#e76624", s.BENCH_EW: "#00a888", s.BENCH_SPY: "#d28e05"}
 ASSET_COLORS = {"SPY": "#338ced", "EFA": "#e76624", "IEF": "#00a888", "GLD": "#d28e05", "CASH": "#e24d8b"}
@@ -98,6 +101,68 @@ def keep_selected(key):
         st.session_state[f"_last_{key}"] = st.session_state[key]
 
 
+# ---------------------------------------------------------------- settings in the link
+# The address keeps every setting that differs from the prospectus, for example ?window=8&cost=25&period=5y.
+# A reload keeps the view, and the link can be shared. Values that are not valid are ignored.
+BENCH_SLUGS = {s.BENCH_6040: "6040", s.BENCH_EW: "equal", s.BENCH_SPY: "sp500"}
+VIEW_SLUGS = {v: v.lower().replace(" ", "_") for v in VIEWS}
+LINK_KEYS = ["window", "cost", "filter", "benchmark", "amount", "period", "from", "to", "chart", "compare", "view"]
+
+
+def settings_from_link(q):
+    def whole(key, lo, hi, step=1):
+        try:
+            v = int(q.get(key, ""))
+        except ValueError:
+            return None
+        return v if lo <= v <= hi and (v - lo) % step == 0 else None
+
+    def choice(key, slugs):
+        return {slug: value for value, slug in slugs.items()}.get(q.get(key, "").lower())
+
+    found = {"window": whole("window", 2, 12), "cost": whole("cost", 0, 100, 5),
+             "amount": whole("amount", 100, 10_000_000),
+             "use_filter": {"on": True, "off": False}.get(q.get("filter", "").lower()),
+             "benchmark": choice("benchmark", BENCH_SLUGS), "range": choice("period", {r: r.lower() for r in RANGES}),
+             "chart_type": choice("chart", {c: c.lower() for c in CHART_TYPES}),
+             "show_benchmark": {"on": True, "off": False}.get(q.get("compare", "").lower()),
+             "view": choice("view", VIEW_SLUGS)}
+    first, last = whole("from", FIRST_YEAR, LAST_YEAR), whole("to", FIRST_YEAR, LAST_YEAR)
+    if found["range"] == "Custom" and first is not None and last is not None and first <= last:
+        found["years"] = (first, last)
+    return {k: v for k, v in found.items() if v is not None}
+
+
+def settings_to_link():
+    ss, out = st.session_state, {}
+    for key, name in [("window", "window"), ("cost", "cost"), ("amount", "amount")]:
+        if ss[key] != DEFAULTS[key]:
+            out[name] = str(int(ss[key]))
+    if not ss.use_filter:
+        out["filter"] = "off"
+    if ss.benchmark != DEFAULTS["benchmark"]:
+        out["benchmark"] = BENCH_SLUGS[ss.benchmark]
+    period, chart, view = ss.range or "Max", ss.chart_type or "Line", ss.view or "Growth"
+    if period != DEFAULTS["range"]:
+        out["period"] = period.lower()
+        if period == "Custom":
+            out["from"], out["to"] = str(ss.years[0]), str(ss.years[1])
+    if chart != DEFAULTS["chart_type"]:
+        out["chart"] = chart.lower()
+    if not ss.show_benchmark:
+        out["compare"] = "off"
+    if view != DEFAULTS["view"]:
+        out["view"] = VIEW_SLUGS[view]
+    return out
+
+
+if "_link_read" not in st.session_state:  # once per visit, before any control is drawn
+    st.session_state._link_read = True
+    for key, value in settings_from_link(st.query_params).items():
+        st.session_state[key] = value
+        st.session_state[f"_last_{key}"] = value
+
+
 # ---------------------------------------------------------------- styling
 # Layout ideas. A borderless hero with one large number and a clean chart, period chips under the chart
 # (Trade Republic). Round quick action buttons that open each setting (Revolut). Section titles above
@@ -122,9 +187,24 @@ st.markdown(f"""<style>
             background:{RAISED}; padding:7px 12px; border-radius:999px; white-space:nowrap; }}
 .tf-dot {{ display:inline-block; flex:0 0 auto; width:8px; height:8px; border-radius:50%; }}
 .st-key-topbar {{ margin-bottom:10px; }}
-.st-key-topbar button {{ border-radius:999px; min-height:34px; padding:4px 14px; background:{RAISED}; border:none;
-                        font-size:0.8rem; }}
-.st-key-topbar button:hover {{ background:{RAISED_2}; color:{INK}; }}
+/* the title takes the room the badges and buttons leave, so they stay on its line on a computer */
+.st-key-topbar > div:first-child {{ flex:1 1 260px !important; min-width:0 !important; }}
+.tf-brand > div {{ min-width:0; }}
+.tf-sub {{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+/* only the two top bar buttons. Older Streamlit puts the popover content next to its button in the same row */
+.st-key-topbar [data-testid="stPopoverButton"], .st-key-topbar [data-testid^="stBaseButton"] {{ border-radius:999px;
+  min-height:34px; padding:4px 14px; background:{RAISED}; border:none; font-size:0.8rem; }}
+.st-key-topbar [data-testid="stPopoverButton"]:hover, .st-key-topbar [data-testid^="stBaseButton"]:hover {{
+  background:{RAISED_2}; color:{INK}; }}
+.st-key-topbar [data-testid="stPopoverButton"] div[aria-hidden="true"],
+.st-key-topbar [data-testid="stPopoverButton"] > div:has(> svg) {{ display:none; }}
+/* real headings for screen readers, styled like the rest of the page */
+h1.tf-name, h2.tf-sec-title {{ padding:0 !important; margin:0 !important; scroll-margin-top:1rem; }}
+h1.tf-name {{ font-size:1.02rem !important; font-weight:700 !important; line-height:1.25 !important; }}
+h2.tf-sec-title {{ font-size:1.3rem !important; font-weight:700 !important; line-height:1.3 !important;
+  letter-spacing:-0.02em !important; }}
+.tf-brand [data-testid="stHeaderActionElements"], .tf-sec [data-testid="stHeaderActionElements"],
+.tf-error [data-testid="stHeaderActionElements"] {{ display:none; }}
 
 /* hero */
 .tf-eyebrow {{ display:flex; align-items:center; gap:8px; font-size:0.88rem; color:{INK_2}; font-weight:500; }}
@@ -138,6 +218,16 @@ st.markdown(f"""<style>
          color:{INK_2}; font-variant-numeric:tabular-nums; }}
 .tf-vs b {{ color:{INK}; font-weight:600; }}
 .tf-vs .good {{ color:{GOOD}; }} .tf-vs .bad {{ color:{BAD}; }}
+/* scrubbing (SCRUB_JS). The script sets --scrub, the original text hides and the value at the pointer shows */
+:root {{ --tf-good:{GOOD}; --tf-bad:{BAD}; }}
+[data-live] {{ position:relative; }}
+[data-live][style*="--scrub"] {{ color:transparent !important; }}
+[data-live][style*="--scrub"] > * {{ visibility:hidden; }}
+[data-live][style*="--scrub"]::after {{ content:var(--scrub); position:absolute; left:0; top:0; white-space:nowrap;
+  color:var(--scrub-color, {INK}); visibility:visible; }}
+.tf-meta[style*="--scrub"]::after {{ color:var(--scrub-color, {INK_2}); }}
+.st-key-scrubjs {{ display:none; }}
+.st-key-herochart .nsewdrag {{ touch-action:pan-y; }}  /* sideways slides scrub, vertical swipes still scroll */
 
 /* round quick actions. ACT is the button that opens each popover. Older Streamlit puts the popover content
    next to that button inside the same row, so every rule targets the button itself and never other buttons. */
@@ -188,7 +278,8 @@ st.markdown(f"""<style>
 .st-key-view [data-testid="stButtonGroup"] button p {{ font-size:0.9rem; white-space:nowrap; }}
 
 /* keyboard focus. The chips, tabs and round buttons above drop Streamlit's own ring, so they get a clear one back */
-[data-testid="stButtonGroup"] button:focus-visible, .st-key-topbar button:focus-visible,
+[data-testid="stButtonGroup"] button:focus-visible, .st-key-topbar [data-testid="stPopoverButton"]:focus-visible,
+.st-key-topbar [data-testid^="stBaseButton"]:focus-visible,
 .st-key-holdnav button:focus-visible, .tf-info summary:focus-visible, .tf-foot a:focus-visible {{
   outline:2px solid {ACCENT} !important; outline-offset:2px; }}
 .st-key-view [data-testid="stButtonGroup"] button:focus-visible {{ outline-offset:-2px; }}
@@ -229,7 +320,7 @@ div[class*="st-key-card"] {{ background:{CARD}; border:1px solid {BORDER}; borde
 .tf-pill {{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:999px; font-weight:600;
            font-size:0.76rem; color:{INK}; font-variant-numeric:tabular-nums; white-space:nowrap; }}
 .tf-pill.good {{ background:rgba(34,197,94,0.14); color:{GOOD}; }}
-.tf-pill.bad {{ background:rgba(240,68,68,0.15); color:{BAD}; }}
+.tf-pill.bad {{ background:rgba(240,68,68,0.15); color:{BAD_TEXT}; }}
 .tf-pill.neutral {{ background:{RAISED}; }}
 .tf-plain {{ font-size:0.78rem; color:{INK_2}; line-height:1.45; margin-top:8px; }}
 .tf-info summary {{ list-style:none; cursor:pointer; display:block; border-radius:6px; }}
@@ -247,7 +338,8 @@ div[class*="st-key-card"] {{ background:{CARD}; border:1px solid {BORDER}; borde
 .tf-error {{ max-width:560px; margin:48px auto 12px auto; text-align:center; }}
 .tf-error .ic {{ width:52px; height:52px; border-radius:50%; margin:0 auto 14px auto; display:flex; align-items:center;
   justify-content:center; background:rgba(210,142,5,0.16); color:#d28e05; font-size:1.5rem; font-weight:800; }}
-.tf-error .t {{ font-size:1.25rem; font-weight:700; color:{INK}; margin-bottom:6px; }}
+h2.tf-err-title {{ font-size:1.25rem !important; font-weight:700 !important; color:{INK}; padding:0 !important;
+  margin:0 0 6px 0 !important; line-height:1.35 !important; }}
 .tf-error .d {{ font-size:0.9rem; color:{INK_2}; line-height:1.55; }}
 .st-key-error_actions {{ justify-content:center; }}
 .st-key-error_details {{ max-width:560px; margin:0 auto; }}
@@ -293,6 +385,15 @@ div[class*="st-key-switch_"] > div[data-testid="stElementContainer"]:last-child 
 @media (max-width: 900px) {{
   .tf-stats {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }}
 }}
+/* touch screens. Targets of at least 44 pixels, as the phone platform guidelines ask */
+@media (pointer: coarse), (max-width: 640px) {{
+  [data-testid="stButtonGroup"] button {{ min-height:44px !important; min-width:44px; }}
+  .st-key-holdnav button {{ width:44px; height:44px; min-height:44px; }}
+  .st-key-topbar [data-testid="stPopoverButton"], .st-key-topbar [data-testid^="stBaseButton"] {{ min-height:40px; }}
+  [data-testid="stCheckbox"] label {{ min-height:44px; align-items:center; }}
+  div[class*="st-key-switch_"] [data-testid="stCheckbox"] label {{ min-width:52px; }}
+  .tf-info summary {{ padding:10px 0; margin:-10px 0; }}
+}}
 @media (max-width: 640px) {{
   [data-testid="stMainBlockContainer"], .block-container {{ padding-left:16px; padding-right:16px;
     padding-top:0.6rem; }}
@@ -301,6 +402,9 @@ div[class*="st-key-switch_"] > div[data-testid="stElementContainer"]:last-child 
   .st-key-actions > div {{ width:auto !important; min-width:0 !important; }}
   {ACT} {{ width:100%; --circle:46px; }}
   .tf-sub {{ display:none; }}
+  .st-key-topbar [data-testid="stPopoverButton"] {{ padding:4px 12px; }}
+  .st-key-topbar [data-testid="stPopoverButton"] [data-testid="stMarkdownContainer"] {{ position:absolute;
+    width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }}  /* icon only, still named */
   .tf-stat {{ padding:14px 14px; }}
   .tf-stat .v {{ font-size:1.3rem; }}
   .tf-item {{ grid-template-columns:40px minmax(0, 1fr) auto; gap:12px; }}
@@ -507,7 +611,7 @@ def html(markup, **kwargs):
 
 def section(title, meta=""):
     """Section title above a card, with an optional note on the right."""
-    html(f'<div class="tf-sec"><div class="tf-sec-title">{escape(title)}</div>'
+    html(f'<div class="tf-sec"><h2 class="tf-sec-title">{escape(title)}</h2>'
          f'<div class="tf-sec-meta">{meta}</div></div>')
 
 
@@ -561,6 +665,119 @@ def show(fig):
     st.plotly_chart(fig, theme=None, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
 
 
+# Trade Republic style scrubbing. While the mouse or a finger moves along the line chart, the big number, the
+# change and the date show the value at that point. The script runs in a hidden component frame and listens to the
+# chart's hover events in the page. It never edits the text Streamlit drew. It only sets a CSS variable that the
+# style sheet shows in place of that text, so removing the variable always brings back the real figures.
+SCRUB_JS = """<script>
+(function () {
+  const doc = window.parent.document;
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
+                  "October", "November", "December"];
+  const money = v => "$" + Math.round(v).toLocaleString("en-US");
+  const pct = v => (v < 0 ? "\\u2212" : "+") + Math.abs(v * 100).toFixed(1) + "%";
+  const live = name => doc.querySelector('[data-live="' + name + '"]');
+  let lastHover = 0, timer = null;
+
+  function set(el, text, color) {
+    if (!el) return;
+    el.style.setProperty("--scrub", JSON.stringify(text));
+    if (color) el.style.setProperty("--scrub-color", color); else el.style.removeProperty("--scrub-color");
+  }
+  function restore() {
+    clearTimeout(timer);
+    doc.querySelectorAll("[data-live]").forEach(el => {
+      el.style.removeProperty("--scrub"); el.style.removeProperty("--scrub-color");
+    });
+  }
+  function show(ev) {
+    const hero = live("value");
+    if (!hero || hero.dataset.scrub !== "1") return;
+    const amount = parseFloat(hero.dataset.amount), bench = hero.dataset.bench;
+    let s = null, b = null, x = null;
+    for (const p of ev.points || []) {
+      const name = p.data && p.data.name;
+      if (name === "Strategy") { s = p.y; x = p.x; } else if (name === bench) { b = p.y; }
+    }
+    if (s === null || x === null) return;
+    clearTimeout(timer);
+    lastHover = Date.now();
+    const ym = String(x).slice(0, 7).split("-");
+    const good = getComputedStyle(doc.documentElement).getPropertyValue("--tf-good") || "#22c55e";
+    const bad = getComputedStyle(doc.documentElement).getPropertyValue("--tf-bad") || "#f04444";
+    set(hero, money(s));
+    set(live("change"), (s >= amount ? "\\u25b2 " : "\\u25bc ") + money(Math.abs(s - amount)) + "\\u2003" +
+        pct(s / amount - 1), s >= amount ? good : bad);
+    set(live("meta"), "Value at the end of " + MONTHS[parseInt(ym[1], 10) - 1] + " " + ym[0]);
+    if (b !== null) {
+      set(live("vs-value"), money(b));
+      set(live("vs-pct"), pct(b / amount - 1), b >= amount ? good : bad);
+      set(live("vs-extra"), "");
+    }
+  }
+  // On a touch screen Plotly only reacts to taps, so a finger sliding along the chart is followed here
+  function scrubAt(gd, clientX) {
+    const xa = gd._fullLayout && gd._fullLayout.xaxis, hero = live("value");
+    if (!xa || !hero) return;
+    const t = xa.p2l(clientX - gd.getBoundingClientRect().left - xa._offset);
+    const traces = gd._fullData || [];
+    const st = traces.find(d => d.name === "Strategy");
+    if (!st || !st.x) return;
+    let best = 0, gap = Infinity;
+    for (let i = 0; i < st.x.length; i++) {
+      const d = Math.abs(xa.d2l(st.x[i]) - t);
+      if (d < gap) { gap = d; best = i; }
+    }
+    const points = [{data: {name: "Strategy"}, x: st.x[best], y: st.y[best]}];
+    const bt = traces.find(d => d.name === hero.dataset.bench);
+    if (bt) points.push({data: {name: bt.name}, x: bt.x[best], y: bt.y[best]});
+    show({points: points});
+    const P = window.parent.Plotly;  // also draws the hover line and label where available
+    if (P && P.Fx) { try { P.Fx.hover(gd, [{curveNumber: st.index, pointNumber: best}]); } catch (e) {} }
+  }
+  function later(ms, gd) {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      restore();
+      const P = window.parent.Plotly;
+      if (P && P.Fx) { try { P.Fx.unhover(gd); } catch (e) {} }
+    }, ms);
+  }
+  function bind() {
+    const gd = doc.querySelector(".st-key-herochart .js-plotly-plot");
+    if (gd && !gd.__tfScrub && typeof gd.on === "function") {
+      gd.__tfScrub = true;
+      gd.on("plotly_hover", show);
+      gd.on("plotly_unhover", restore);
+      gd.addEventListener("mouseleave", restore);
+    }
+    const drag = gd && gd.querySelector(".nsewdrag");
+    if (drag && !drag.__tfTouch) {
+      drag.__tfTouch = true;
+      let x0 = 0, y0 = 0, moved = false, sideways = false;
+      drag.addEventListener("touchstart", e => {
+        const p = e.touches[0]; x0 = p.clientX; y0 = p.clientY; moved = false; sideways = false;
+      }, {passive: true});
+      drag.addEventListener("touchmove", e => {
+        const p = e.touches[0], dx = Math.abs(p.clientX - x0), dy = Math.abs(p.clientY - y0);
+        if (!moved && (dx > 6 || dy > 6)) { moved = true; sideways = dx > dy; }
+        if (sideways) scrubAt(gd, p.clientX);  // a mostly sideways slide scrubs, an upward one scrolls the page
+      }, {passive: true});
+      drag.addEventListener("touchend", () => {
+        if (!moved) scrubAt(gd, x0);  // a tap shows that month for a moment
+        later(moved ? 900 : 2000, gd);
+      }, {passive: true});
+      drag.addEventListener("touchcancel", () => later(300, gd), {passive: true});
+    }
+    // safety net, for example after a rerun while the figures were scrubbed
+    const scrubbing = doc.querySelector('[data-live][style*="--scrub"]');
+    if (scrubbing && Date.now() - lastHover > 4000 && !(gd && gd.matches(":hover"))) restore();
+  }
+  setInterval(bind, 400);
+})();
+</script>"""
+
+
 def sparkline(prices, sma, color, w=112, h=38):
     """Inline SVG of the last two years of month end prices, with the moving average dashed."""
     p = prices.to_numpy(dtype=float)
@@ -599,7 +816,7 @@ logo = ('<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden
         '<path d="M3 17 L9 11 L13 14 L21 6" stroke="white" stroke-width="2.4" stroke-linecap="round" '
         'stroke-linejoin="round"/><circle cx="21" cy="6" r="2" fill="white"/></svg>')
 brand = (f'<div class="tf-brand"><div class="tf-logo">{logo}</div><div>'
-         f'<div class="tf-name">Trend Filtered Portfolio</div>'
+         f'<h1 class="tf-name">Trend Filtered Portfolio</h1>'
          f'<div class="tf-sub">Backtest explorer for the investor prospectus · 2270 Financial Modeling, Nova SBE</div>'
          f'</div></div>')
 try:
@@ -607,7 +824,8 @@ try:
 except Exception as err:
     # Friendly page for visitors. The technical message stays one click away for the owner of the app.
     html(brand)
-    html('<div class="tf-error"><div class="ic">!</div><div class="t">The prices are not available right now</div>'
+    html('<div class="tf-error"><div class="ic">!</div>'
+         '<h2 class="t tf-err-title">The prices are not available right now</h2>'
          '<div class="d">Yahoo Finance, which supplies the prices, did not answer. This usually passes within a '
          'minute or two. Press Try again in a moment.</div></div>')
     with st.container(horizontal=True, key="error_actions"):
@@ -635,6 +853,14 @@ bname = escape(benchmark)
 is_default = (window == DEFAULTS["window"] and cost == DEFAULTS["cost"] and use_filter
               and benchmark == DEFAULTS["benchmark"] and years == (FIRST_YEAR, LAST_YEAR))
 
+# Keep the address in step with the settings. Other parameters in the address are left alone.
+link = settings_to_link()
+address = st.query_params.to_dict()
+wanted = {k: v for k, v in address.items() if k not in LINK_KEYS} | link
+if address != wanted:
+    st.query_params.from_dict(wanted)
+share_url = (st.context.url or "").split("?")[0] + ("?" + urlencode(wanted) if wanted else "")
+
 # ---------------------------------------------------------------- top bar
 with st.container(horizontal=True, vertical_alignment="center", key="topbar"):
     html(brand, width="stretch")
@@ -647,6 +873,11 @@ with st.container(horizontal=True, vertical_alignment="center", key="topbar"):
         html(f'<span class="tf-badge">{dot("#e76624")}Custom settings</span>', width="content")
         st.button("Reset", icon=":material/restart_alt:", on_click=reset_settings, key="reset",
                   help="Back to the settings used in the prospectus")
+    with st.popover("Share", icon=":material/ios_share:"):
+        html('<div class="tf-pop-title">Share this view</div><div class="tf-pop-text">The link keeps your settings, '
+             'period, chart and tab. Copy it with the button in the box. The address in your browser always holds '
+             'the same link.</div>')
+        st.code(share_url or "?" + urlencode(wanted), language=None, wrap_lines=True)
 
 # ---------------------------------------------------------------- hero
 show_bench = bool(st.session_state.show_benchmark)
@@ -656,17 +887,24 @@ total = growth[s.STRATEGY].iloc[-1] - 1
 b_value = amount * growth[benchmark].iloc[-1]
 b_total = growth[benchmark].iloc[-1] - 1
 
+chart_type = st.session_state.chart_type or "Line"
+
 col_num, col_act = st.columns([1.1, 1], vertical_alignment="bottom", gap="medium")
 with col_num:
     up = value >= amount
-    vs_html = (f'<div class="tf-vs">{dot(COLORS[benchmark])}<span>{bname}</span><b>{money(b_value)}</b>'
-               f'<span class="{"good" if b_total >= 0 else "bad"}">{pct(b_total, 1, sign=True)}</span>'
-               f'<span>· {pct(perf.loc["CAGR", benchmark], 1)} a year</span></div>' if show_bench else "")
+    vs_html = (f'<div class="tf-vs">{dot(COLORS[benchmark])}<span>{bname}</span>'
+               f'<b data-live="vs-value">{money(b_value)}</b><span data-live="vs-pct" '
+               f'class="{"good" if b_total >= 0 else "bad"}">{pct(b_total, 1, sign=True)}</span>'
+               f'<span data-live="vs-extra">· {pct(perf.loc["CAGR", benchmark], 1)} a year</span></div>'
+               if show_bench else "")
+    # data-live marks the text that follows a finger or the mouse along the line chart (SCRUB_JS)
     html(f'<div class="tf-eyebrow">{dot(ACCENT)}Strategy · {money(amount)} invested at the end of {start_label}</div>'
-         f'<div class="tf-hero">{money(value)}</div>'
-         f'<div class="tf-change {"good" if up else "bad"}"><span>{"▲" if up else "▼"} {money(abs(value - amount))}'
-         f'</span><span>{pct(total, 1, sign=True)}</span></div>'
-         f'<div class="tf-meta">{pct(perf.loc["CAGR", s.STRATEGY], 1)} a year · {period_label}</div>{vs_html}')
+         f'<div class="tf-hero" data-live="value" data-amount="{amount:.2f}" data-bench="{bname}" '
+         f'data-scrub="{1 if chart_type == "Line" else 0}">{money(value)}</div>'
+         f'<div class="tf-change {"good" if up else "bad"}" data-live="change"><span>{"▲" if up else "▼"} '
+         f'{money(abs(value - amount))}</span><span>{pct(total, 1, sign=True)}</span></div>'
+         f'<div class="tf-meta" data-live="meta">{pct(perf.loc["CAGR", s.STRATEGY], 1)} a year · {period_label}'
+         f'</div>{vs_html}')
     # The rule in one sentence, so a first time visitor knows what the number belongs to
     rule = (f"The strategy holds SPY, EFA, IEF and GLD at 25% each. At every month end, an ETF below its {window} "
             f"month average moves to Treasury bills until its price is back above it." if use_filter else
@@ -704,19 +942,17 @@ with col_act:
             st.number_input("Invested amount ($)", min_value=100, max_value=10_000_000, step=1000,
                             label_visibility="collapsed", **bound("amount"))
 
-chart_type = st.session_state.chart_type or "Line"
 if chart_type == "Line":
     v = growth[on_chart] * amount
     lo, hi = min(v.min().min(), amount), max(v.max().max(), amount)
     floor = lo - 0.08 * (hi - lo)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=v.index, y=[floor] * len(v), mode="lines", line=dict(width=0),
-                             hoverinfo="skip", showlegend=False))
+    # The area fills down to zero and the axis cuts it at the floor. The fade runs from the floor to the top.
     fig.add_trace(go.Scatter(
-        x=v.index, y=v[s.STRATEGY], name=s.STRATEGY, mode="lines", fill="tonexty",
+        x=v.index, y=v[s.STRATEGY], name=s.STRATEGY, mode="lines", fill="tozeroy",
         line=dict(color=COLORS[s.STRATEGY], width=2.4),
-        fillgradient=dict(type="vertical", colorscale=[[0, rgba(COLORS[s.STRATEGY], 0.0)],
-                                                        [1, rgba(COLORS[s.STRATEGY], 0.30)]]),
+        fillgradient=dict(type="vertical", start=floor, stop=float(v[s.STRATEGY].max()),
+                          colorscale=[[0, rgba(COLORS[s.STRATEGY], 0.0)], [1, rgba(COLORS[s.STRATEGY], 0.30)]]),
         hovertemplate="$%{y:,.0f}"))
     if show_bench:
         fig.add_trace(go.Scatter(x=v.index, y=v[benchmark], name=benchmark, mode="lines",
@@ -762,6 +998,32 @@ else:
     caption = (f"Each candle is one {kind} of the strategy value, built from daily prices and net of trading costs. "
                f"Green candles closed above their open, red candles below.")
 
+# Stress periods as faint bands. On the line chart, a hover inside a band adds its name and both returns.
+stress_ret = s.period_returns(returns)
+bands = 0
+for long_name, (a, b) in s.STRESS_PERIODS.items():
+    if "ebound" in long_name:  # only the falls, not the recoveries after them
+        continue
+    a, b = pd.Timestamp(a), pd.Timestamp(b)
+    x0, x1 = max(a, x_range[0]), min(b + pd.Timedelta(days=1), x_range[1])
+    if x0 >= x1:
+        continue
+    bands += 1
+    fig.add_vrect(x0=x0, x1=x1, fillcolor="rgba(255,255,255,0.055)", line_width=0, layer="below")
+    if chart_type == "Line":
+        inside = v.index[(v.index >= a) & (v.index <= b)]
+        label = SHORT_STRESS[long_name]
+        if long_name in stress_ret.index:
+            label += (f" · Strategy {pct(stress_ret.loc[long_name, s.STRATEGY], 1, sign=True)}, {benchmark} "
+                      f"{pct(stress_ret.loc[long_name, benchmark], 1, sign=True)}")
+        if len(inside):
+            fig.add_trace(go.Scatter(x=inside, y=[floor] * len(inside), mode="lines", name=label, showlegend=False,
+                                     line=dict(width=0, color="rgba(0,0,0,0)"),
+                                     hovertemplate=f"{escape(label)}<extra></extra>"))
+if bands:
+    caption += (" Shaded bands mark stress periods" + (", hover or tap inside one for its returns." if
+                                                         chart_type == "Line" else "."))
+
 # Trade Republic style chart. Price axis on the right, faint grid, and a dotted line at the amount invested.
 fig.add_hline(y=amount, line=dict(color=rgba(INK, 0.28), width=1, dash="dot"))
 fig.add_annotation(x=1, xref="paper", y=amount, yref="y", text=f"Invested {money(amount)}", showarrow=False,
@@ -770,7 +1032,10 @@ base_layout(fig, height=340, yformat="~s", yprefix="$", right_margin=4, legend=F
 fig.update_layout(hovermode="x" if chart_type == "Candles" else "x unified", margin=dict(l=0, r=0, t=12, b=4))
 fig.update_yaxes(side="right", range=y_range, tickfont=dict(color=INK_2, size=11), nticks=6)
 fig.update_xaxes(range=x_range, rangeslider_visible=False, tickfont=dict(color=INK_2, size=11))
-show(fig)
+with st.container(key="herochart"):
+    show(fig)
+with st.container(key="scrubjs"):  # hidden, it only carries the script
+    components.html(SCRUB_JS, height=0)
 
 c_range, c_tools = st.columns([1.25, 1], vertical_alignment="center", gap="small")
 with c_range:
